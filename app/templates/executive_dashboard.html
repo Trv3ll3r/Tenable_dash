@@ -28,10 +28,12 @@
     }
     
     .metric-card h3 {
-        color: #7f8c8d;
-        font-size: 0.9rem;
+        color: #34495e;
+        font-size: 0.95rem;
         text-transform: uppercase;
         margin-bottom: 15px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
     }
     
     .metric-value {
@@ -41,18 +43,20 @@
         margin: 10px 0;
     }
     
-    .metric-card.critical .metric-value { color: #e74c3c; }
-    .metric-card.high .metric-value { color: #fd7e14; }
-    .metric-card.warning .metric-value { color: #f39c12; }
-    .metric-card.positive .metric-value { color: #27ae60; }
+    .metric-card.critical .metric-value { color: #c0392b; }
+    .metric-card.high .metric-value { color: #d35400; }
+    .metric-card.warning .metric-value { color: #d68910; }
+    .metric-card.positive .metric-value { color: #229954; }
     
     .metric-trend {
-        font-size: 0.9rem;
+        font-size: 1rem;
         margin-top: 10px;
+        color: #34495e;
+        font-weight: 600;
     }
     
-    .trend-up { color: #e74c3c; }
-    .trend-down { color: #27ae60; }
+    .trend-up { color: #c0392b; font-weight: 700; }
+    .trend-down { color: #229954; font-weight: 700; }
     
     .chart-container {
         background: white;
@@ -62,8 +66,31 @@
         margin-bottom: 20px;
     }
     
+    .chart-container h3 {
+        color: #2c3e50;
+        font-weight: 700;
+        margin-bottom: 15px;
+        font-size: 1.3rem;
+    }
+    
+    .chart-container p {
+        color: #34495e;
+        font-weight: 500;
+        font-size: 1rem;
+    }
+    
+    .chart-container .lead {
+        color: #2c3e50;
+        font-size: 1.1rem;
+    }
+    
+    .chart-container strong {
+        color: #2c3e50;
+        font-weight: 700;
+    }
+    
     .grc-framework-card {
-        background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+        background: linear-gradient(135deg, #2980b9 0%, #1f618d 100%);
         color: white;
         padding: 20px;
         border-radius: 10px;
@@ -72,13 +99,22 @@
     
     .grc-framework-card h4 {
         margin: 0 0 10px 0;
-        font-size: 1.2rem;
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: white;
     }
     
     .grc-stat {
         display: inline-block;
         margin-right: 20px;
-        font-size: 0.9rem;
+        font-size: 1rem;
+        color: white;
+        font-weight: 600;
+    }
+    
+    .grc-stat strong {
+        font-weight: 800;
+        color: white;
     }
     
     .risk-gauge {
@@ -94,7 +130,8 @@
         border: none;
         padding: 12px 30px;
         border-radius: 8px;
-        font-weight: bold;
+        font-weight: 700;
+        font-size: 1.1rem;
         text-decoration: none;
         display: inline-block;
         transition: transform 0.3s;
@@ -106,11 +143,118 @@
         color: white;
         text-decoration: none;
     }
+    
+    .text-danger {
+        color: #c0392b !important;
+        font-weight: 700;
+    }
+    
+    .text-warning {
+        color: #d68910 !important;
+        font-weight: 700;
+    }
+    
+    .text-success {
+        color: #229954 !important;
+        font-weight: 700;
+    }
+    
+    .text-info {
+        color: #1f618d !important;
+        font-weight: 700;
+    }
+    
+    .text-primary {
+        color: #2874a6 !important;
+        font-weight: 700;
+    }
+    
+    .text-muted {
+        color: #5d6d7e !important;
+        font-weight: 500;
+    }
+    
+    .alert-danger {
+        background-color: #fadbd8;
+        border-color: #e74c3c;
+        color: #7b241c;
+        font-weight: 600;
+    }
+    
+    .alert-danger strong {
+        color: #641e16;
+        font-weight: 800;
+    }
+    
+    .table {
+        color: #2c3e50;
+    }
+    
+    .table thead th {
+        background-color: #34495e;
+        color: white;
+        font-weight: 700;
+        border: none;
+    }
+    
+    .table tbody tr {
+        color: #2c3e50;
+    }
+    
+    .table tbody td {
+        font-weight: 500;
+        color: #34495e;
+    }
+    
+    .table tbody td strong {
+        color: #2c3e50;
+        font-weight: 700;
+    }
+    
+    .badge-critical {
+        background-color: #c0392b;
+        color: white;
+        font-weight: 700;
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    .badge-high {
+        background-color: #d35400;
+        color: white;
+        font-weight: 700;
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    .badge-medium {
+        background-color: #d68910;
+        color: white;
+        font-weight: 700;
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    .badge-low {
+        background-color: #2874a6;
+        color: white;
+        font-weight: 700;
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    h2.mt-3 {
+        font-weight: 800;
+    }
+    
+    .metric-value {
+        text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
 </style>
 
 <div class="executive-header">
     <h1><i class="fas fa-chart-line"></i> Executive Security Dashboard</h1>
-    <p style="margin: 10px 0 0 0; font-size: 1.1rem;">Security Posture Overview | {{ data.generated_at }}</p>
+    <p style="margin: 10px 0 0 0; font-size: 1.1rem; font-weight: 500;">Security Posture Overview | {{ data.generated_at }}</p>
     <div style="margin-top: 20px;">
         <a href="{{ url_for('main.executive_dashboard_pdf') }}" class="pdf-export-btn">
             <i class="fas fa-file-pdf"></i> Export to PDF
@@ -160,10 +304,10 @@
             <div class="risk-gauge">
                 <canvas id="riskGauge"></canvas>
             </div>
-            <h2 class="mt-3" style="color: {% if data.risk_score > 70 %}#e74c3c{% elif data.risk_score > 40 %}#f39c12{% else %}#27ae60{% endif %}">
+            <h2 class="mt-3" style="color: {% if data.risk_score > 70 %}#c0392b{% elif data.risk_score > 40 %}#d68910{% else %}#229954{% endif %}; font-weight: 800;">
                 {{ '%.0f'|format(data.risk_score) }}/100
             </h2>
-            <p>{% if data.risk_score > 70 %}High Risk{% elif data.risk_score > 40 %}Moderate Risk{% else %}Low Risk{% endif %}</p>
+            <p style="font-weight: 600; color: #34495e;">{% if data.risk_score > 70 %}High Risk{% elif data.risk_score > 40 %}Moderate Risk{% else %}Low Risk{% endif %}</p>
         </div>
     </div>
     <div class="col-lg-4 mb-3">
@@ -172,21 +316,21 @@
             <div class="risk-gauge">
                 <canvas id="complianceGauge"></canvas>
             </div>
-            <h2 class="mt-3" style="color: {% if data.compliance_score > 70 %}#27ae60{% elif data.compliance_score > 40 %}#f39c12{% else %}#e74c3c{% endif %}">
+            <h2 class="mt-3" style="color: {% if data.compliance_score > 70 %}#229954{% elif data.compliance_score > 40 %}#d68910{% else %}#c0392b{% endif %}; font-weight: 800;">
                 {{ '%.0f'|format(data.compliance_score) }}/100
             </h2>
-            <p>{% if data.grc_stats.frameworks_affected > 0 %}{{ data.grc_stats.frameworks_affected }} Frameworks Affected{% else %}No Framework Data{% endif %}</p>
+            <p style="font-weight: 600; color: #34495e;">{% if data.grc_stats.frameworks_affected > 0 %}{{ data.grc_stats.frameworks_affected }} Frameworks Affected{% else %}No Framework Data{% endif %}</p>
         </div>
     </div>
     <div class="col-lg-4 mb-3">
         <div class="chart-container">
             <h3>Mean Time To Remediate</h3>
             <div class="text-center mt-4">
-                <div class="metric-value" style="font-size: 2.5rem; color: #3498db;">{{ '%.1f'|format(data.mttr.overall_days) }}</div>
-                <p>Days (Overall Average)</p>
+                <div class="metric-value" style="font-size: 2.5rem; color: #2874a6;">{{ '%.1f'|format(data.mttr.overall_days) }}</div>
+                <p style="font-weight: 600; color: #34495e;">Days (Overall Average)</p>
                 <hr>
-                <div class="metric-value" style="font-size: 2rem; color: #e74c3c;">{{ '%.1f'|format(data.mttr.critical_days) }}</div>
-                <p>Days (Critical Issues)</p>
+                <div class="metric-value" style="font-size: 2rem; color: #c0392b;">{{ '%.1f'|format(data.mttr.critical_days) }}</div>
+                <p style="font-weight: 600; color: #34495e;">Days (Critical Issues)</p>
                 <small class="text-muted">{{ data.mttr.findings_resolved }} findings resolved in last 30 days</small>
             </div>
         </div>
@@ -201,11 +345,11 @@
             <div class="row text-center mt-4">
                 <div class="col-6">
                     <h2 class="text-danger">{{ data.summary.attack_path_findings }}</h2>
-                    <p>Attack Path Findings</p>
+                    <p style="font-weight: 600; color: #34495e;">Attack Path Findings</p>
                 </div>
                 <div class="col-6">
                     <h2 class="text-warning">{{ data.summary.attack_path_assets }}</h2>
-                    <p>Assets in Attack Paths</p>
+                    <p style="font-weight: 600; color: #34495e;">Assets in Attack Paths</p>
                 </div>
             </div>
             <div class="alert alert-danger mt-3" role="alert">
@@ -221,15 +365,15 @@
             <div class="row text-center mt-3">
                 <div class="col-4">
                     <h4 class="text-warning">{{ data.cloud_breakdown.aws }}</h4>
-                    <small>AWS Assets</small>
+                    <small style="font-weight: 600; color: #34495e;">AWS Assets</small>
                 </div>
                 <div class="col-4">
                     <h4 class="text-info">{{ data.cloud_breakdown.azure }}</h4>
-                    <small>Azure Assets</small>
+                    <small style="font-weight: 600; color: #34495e;">Azure Assets</small>
                 </div>
                 <div class="col-4">
                     <h4 class="text-primary">{{ data.cloud_breakdown.gcp }}</h4>
-                    <small>GCP Assets</small>
+                    <small style="font-weight: 600; color: #34495e;">GCP Assets</small>
                 </div>
             </div>
         </div>
@@ -302,11 +446,11 @@
                 <tbody>
                     {% for vuln in data.top_vulnerabilities %}
                     <tr>
-                        <td>{{ loop.index }}</td>
-                        <td>{{ vuln.plugin_name }}</td>
+                        <td><strong>{{ loop.index }}</strong></td>
+                        <td style="color: #2c3e50; font-weight: 500;">{{ vuln.plugin_name }}</td>
                         <td><span class="badge badge-{{ vuln.severity }}">{{ vuln.severity|upper }}</span></td>
                         <td><strong>{{ vuln.asset_count }}</strong></td>
-                        <td>{{ '%.1f'|format(vuln.vpr_score) if vuln.vpr_score else 'N/A' }}</td>
+                        <td style="font-weight: 600;">{{ '%.1f'|format(vuln.vpr_score) if vuln.vpr_score else 'N/A' }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -320,19 +464,19 @@
     <div class="col-12">
         <div class="chart-container">
             <h3><i class="fas fa-file-alt"></i> Executive Summary</h3>
-            <p class="lead mt-3">
-                <strong>Security Posture:</strong> The organization currently has 
-                <strong>{{ data.summary.total_findings }}</strong> active security findings across 
-                <strong>{{ data.summary.total_assets }}</strong> managed assets.
+            <p class="lead mt-3" style="color: #2c3e50; font-weight: 500;">
+                <strong style="font-weight: 700;">Security Posture:</strong> The organization currently has 
+                <strong style="font-weight: 700;">{{ data.summary.total_findings }}</strong> active security findings across 
+                <strong style="font-weight: 700;">{{ data.summary.total_assets }}</strong> managed assets.
             </p>
-            <p>
-                <strong>Critical Issues:</strong> There are 
+            <p style="color: #34495e; font-weight: 500;">
+                <strong style="font-weight: 700; color: #2c3e50;">Critical Issues:</strong> There are 
                 <strong class="text-danger">{{ data.summary.critical_findings }}</strong> critical vulnerabilities 
                 requiring immediate attention and 
                 <strong class="text-warning">{{ data.summary.high_findings }}</strong> high-priority issues.
             </p>
-            <p>
-                <strong>Trend Analysis:</strong> Findings have 
+            <p style="color: #34495e; font-weight: 500;">
+                <strong style="font-weight: 700; color: #2c3e50;">Trend Analysis:</strong> Findings have 
                 {% if data.trends.total < 0 %}
                     <span class="text-success">decreased by {{ '%.1f'|format(data.trends.total|abs) }}%</span>
                 {% else %}
@@ -341,18 +485,18 @@
                 compared to the previous 30-day period.
             </p>
             {% if data.summary.attack_path_findings > 0 %}
-            <p>
-                <strong>Attack Surface:</strong> 
+            <p style="color: #34495e; font-weight: 500;">
+                <strong style="font-weight: 700; color: #2c3e50;">Attack Surface:</strong> 
                 <strong class="text-danger">{{ data.summary.attack_path_findings }}</strong> vulnerabilities 
                 are part of identified attack paths, representing elevated risk exposure.
             </p>
             {% endif %}
             {% if data.grc_stats.frameworks_affected > 0 %}
-            <p>
-                <strong>Compliance Impact:</strong> 
-                <strong>{{ data.grc_stats.frameworks_affected }}</strong> regulatory frameworks 
+            <p style="color: #34495e; font-weight: 500;">
+                <strong style="font-weight: 700; color: #2c3e50;">Compliance Impact:</strong> 
+                <strong style="font-weight: 700;">{{ data.grc_stats.frameworks_affected }}</strong> regulatory frameworks 
                 are currently impacted by active vulnerabilities, affecting 
-                <strong>{{ data.grc_stats.total_requirements }}</strong> specific requirements.
+                <strong style="font-weight: 700;">{{ data.grc_stats.total_requirements }}</strong> specific requirements.
             </p>
             {% endif %}
         </div>
@@ -369,7 +513,7 @@ new Chart(riskCtx, {
         datasets: [{
             data: [{{ data.risk_score }}, {{ 100 - data.risk_score }}],
             backgroundColor: [
-                {% if data.risk_score > 70 %}'#e74c3c'{% elif data.risk_score > 40 %}'#f39c12'{% else %}'#27ae60'{% endif %},
+                {% if data.risk_score > 70 %}'#c0392b'{% elif data.risk_score > 40 %}'#d68910'{% else %}'#229954'{% endif %},
                 '#ecf0f1'
             ],
             borderWidth: 0
@@ -396,7 +540,7 @@ new Chart(complianceCtx, {
         datasets: [{
             data: [{{ data.compliance_score }}, {{ 100 - data.compliance_score }}],
             backgroundColor: [
-                {% if data.compliance_score > 70 %}'#27ae60'{% elif data.compliance_score > 40 %}'#f39c12'{% else %}'#e74c3c'{% endif %},
+                {% if data.compliance_score > 70 %}'#229954'{% elif data.compliance_score > 40 %}'#d68910'{% else %}'#c0392b'{% endif %},
                 '#ecf0f1'
             ],
             borderWidth: 0
@@ -429,7 +573,7 @@ new Chart(severityCtx, {
                 {{ data.severity_current.medium }},
                 {{ data.severity_current.low }}
             ],
-            backgroundColor: ['#e74c3c', '#fd7e14', '#f39c12', '#3498db']
+            backgroundColor: ['#c0392b', '#d35400', '#d68910', '#2874a6']
         }]
     },
     options: {
@@ -475,19 +619,19 @@ new Chart(trendCtx, {
         datasets: [{
             label: 'Total Findings',
             data: {{ data.weekly_trends | map(attribute='total') | list | tojson }},
-            borderColor: '#3498db',
-            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+            borderColor: '#2874a6',
+            backgroundColor: 'rgba(40, 116, 166, 0.1)',
             tension: 0.4,
             fill: true
         }, {
             label: 'Critical',
             data: {{ data.weekly_trends | map(attribute='critical') | list | tojson }},
-            borderColor: '#e74c3c',
+            borderColor: '#c0392b',
             tension: 0.4
         }, {
             label: 'High',
             data: {{ data.weekly_trends | map(attribute='high') | list | tojson }},
-            borderColor: '#fd7e14',
+            borderColor: '#d35400',
             tension: 0.4
         }]
     },
