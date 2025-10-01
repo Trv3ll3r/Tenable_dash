@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Tenable One Enhanced Dashboard{% endblock %}</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: #f8f9fa;
+            font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+        }
+        .container-fluid {
+            max-width: 1800px;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            border-radius: 12px;
+            color: white;
+        }
+        .control-panel {
+            background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+        .metric-card {
+            background: linear-gradient(145deg, #ffffff, #f8f9fa);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            min-height: 150px;
+            text-align: center;
+            color: #2c3e50;
+        }
+        .metric-card h5 {
+            color: #2c3e50;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        .metric-card .count {
+            font-size: 3rem;
+            font-weight: 800;
+            color: #3498db;
+            margin-bottom: 10px;
+        }
+        .table-container {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .table thead th {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-bottom: 2px solid #3498db;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+        .severity-critical { color: #e74c3c !important; font-weight: bold; }
+        .severity-high { color: #fd7e14 !important; font-weight: bold; }
+        .severity-medium { color: #f39c12 !important; font-weight: bold; }
+        .severity-low { color: #3498db !important; font-weight: bold; }
+        .badge-critical { background-color: #e74c3c !important; }
+        .badge-high { background-color: #fd7e14 !important; }
+        .badge-medium { background-color: #f39c12 !important; }
+        .badge-low { background-color: #3498db !important; }
+        .export-btn {
+            background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+        .export-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(46, 204, 113, 0.4);
+            color: white;
+            text-decoration: none;
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="header">
+            <h1><i class="fas fa-shield-alt"></i> Tenable One Enhanced Security Dashboard</h1>
+            <p class="mb-0">Vulnerability Management & Risk Prioritization</p>
+        </div>
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
