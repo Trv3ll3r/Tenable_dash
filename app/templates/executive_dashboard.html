@@ -1,0 +1,506 @@
+{% extends "base.html" %}
+
+{% block title %}Executive Security Dashboard{% endblock %}
+
+{% block content %}
+<style>
+    .executive-header {
+        background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 12px;
+        margin-bottom: 30px;
+        text-align: center;
+    }
+    
+    .metric-card {
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        text-align: center;
+        transition: transform 0.3s;
+    }
+    
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    }
+    
+    .metric-card h3 {
+        color: #7f8c8d;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        margin-bottom: 15px;
+    }
+    
+    .metric-value {
+        font-size: 3rem;
+        font-weight: bold;
+        color: #2c3e50;
+        margin: 10px 0;
+    }
+    
+    .metric-card.critical .metric-value { color: #e74c3c; }
+    .metric-card.high .metric-value { color: #fd7e14; }
+    .metric-card.warning .metric-value { color: #f39c12; }
+    .metric-card.positive .metric-value { color: #27ae60; }
+    
+    .metric-trend {
+        font-size: 0.9rem;
+        margin-top: 10px;
+    }
+    
+    .trend-up { color: #e74c3c; }
+    .trend-down { color: #27ae60; }
+    
+    .chart-container {
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+    
+    .grc-framework-card {
+        background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .grc-framework-card h4 {
+        margin: 0 0 10px 0;
+        font-size: 1.2rem;
+    }
+    
+    .grc-stat {
+        display: inline-block;
+        margin-right: 20px;
+        font-size: 0.9rem;
+    }
+    
+    .risk-gauge {
+        width: 200px;
+        height: 200px;
+        margin: 0 auto;
+        position: relative;
+    }
+    
+    .pdf-export-btn {
+        background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        color: white;
+        border: none;
+        padding: 12px 30px;
+        border-radius: 8px;
+        font-weight: bold;
+        text-decoration: none;
+        display: inline-block;
+        transition: transform 0.3s;
+    }
+    
+    .pdf-export-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+        color: white;
+        text-decoration: none;
+    }
+</style>
+
+<div class="executive-header">
+    <h1><i class="fas fa-chart-line"></i> Executive Security Dashboard</h1>
+    <p style="margin: 10px 0 0 0; font-size: 1.1rem;">Security Posture Overview | {{ data.generated_at }}</p>
+    <div style="margin-top: 20px;">
+        <a href="{{ url_for('main.executive_dashboard_pdf') }}" class="pdf-export-btn">
+            <i class="fas fa-file-pdf"></i> Export to PDF
+        </a>
+    </div>
+</div>
+
+<!-- Key Metrics Grid -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="metric-card critical">
+            <h3>Critical Findings</h3>
+            <div class="metric-value">{{ data.summary.critical_findings }}</div>
+            <div class="metric-trend">Immediate Action Required</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="metric-card high">
+            <h3>High Priority</h3>
+            <div class="metric-value">{{ data.summary.high_findings }}</div>
+            <div class="metric-trend">Urgent Remediation</div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="metric-card">
+            <h3>Total Findings</h3>
+            <div class="metric-value">{{ data.summary.total_findings }}</div>
+            <div class="metric-trend {% if data.trends.total < 0 %}trend-down{% else %}trend-up{% endif %}">
+                {{ '%+.1f'|format(data.trends.total) }}% vs Last Period
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="metric-card">
+            <h3>Assets Under Management</h3>
+            <div class="metric-value">{{ data.summary.total_assets }}</div>
+            <div class="metric-trend">{{ data.summary.critical_assets }} with Critical Issues</div>
+        </div>
+    </div>
+</div>
+
+<!-- Risk Score and Compliance -->
+<div class="row mb-4">
+    <div class="col-lg-4 mb-3">
+        <div class="chart-container text-center">
+            <h3>Risk Score</h3>
+            <div class="risk-gauge">
+                <canvas id="riskGauge"></canvas>
+            </div>
+            <h2 class="mt-3" style="color: {% if data.risk_score > 70 %}#e74c3c{% elif data.risk_score > 40 %}#f39c12{% else %}#27ae60{% endif %}">
+                {{ '%.0f'|format(data.risk_score) }}/100
+            </h2>
+            <p>{% if data.risk_score > 70 %}High Risk{% elif data.risk_score > 40 %}Moderate Risk{% else %}Low Risk{% endif %}</p>
+        </div>
+    </div>
+    <div class="col-lg-4 mb-3">
+        <div class="chart-container text-center">
+            <h3>Compliance Score</h3>
+            <div class="risk-gauge">
+                <canvas id="complianceGauge"></canvas>
+            </div>
+            <h2 class="mt-3" style="color: {% if data.compliance_score > 70 %}#27ae60{% elif data.compliance_score > 40 %}#f39c12{% else %}#e74c3c{% endif %}">
+                {{ '%.0f'|format(data.compliance_score) }}/100
+            </h2>
+            <p>{% if data.grc_stats.frameworks_affected > 0 %}{{ data.grc_stats.frameworks_affected }} Frameworks Affected{% else %}No Framework Data{% endif %}</p>
+        </div>
+    </div>
+    <div class="col-lg-4 mb-3">
+        <div class="chart-container">
+            <h3>Mean Time To Remediate</h3>
+            <div class="text-center mt-4">
+                <div class="metric-value" style="font-size: 2.5rem; color: #3498db;">{{ '%.1f'|format(data.mttr.overall_days) }}</div>
+                <p>Days (Overall Average)</p>
+                <hr>
+                <div class="metric-value" style="font-size: 2rem; color: #e74c3c;">{{ '%.1f'|format(data.mttr.critical_days) }}</div>
+                <p>Days (Critical Issues)</p>
+                <small class="text-muted">{{ data.mttr.findings_resolved }} findings resolved in last 30 days</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Attack Surface -->
+<div class="row mb-4">
+    <div class="col-lg-6 mb-3">
+        <div class="chart-container">
+            <h3><i class="fas fa-route"></i> Attack Surface Analysis</h3>
+            <div class="row text-center mt-4">
+                <div class="col-6">
+                    <h2 class="text-danger">{{ data.summary.attack_path_findings }}</h2>
+                    <p>Attack Path Findings</p>
+                </div>
+                <div class="col-6">
+                    <h2 class="text-warning">{{ data.summary.attack_path_assets }}</h2>
+                    <p>Assets in Attack Paths</p>
+                </div>
+            </div>
+            <div class="alert alert-danger mt-3" role="alert">
+                <i class="fas fa-exclamation-triangle"></i> 
+                <strong>Critical:</strong> {{ data.summary.attack_path_findings }} vulnerabilities are part of identified attack chains.
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6 mb-3">
+        <div class="chart-container">
+            <h3><i class="fas fa-cloud"></i> Cloud Asset Distribution</h3>
+            <canvas id="cloudChart" style="max-height: 250px;"></canvas>
+            <div class="row text-center mt-3">
+                <div class="col-4">
+                    <h4 class="text-warning">{{ data.cloud_breakdown.aws }}</h4>
+                    <small>AWS Assets</small>
+                </div>
+                <div class="col-4">
+                    <h4 class="text-info">{{ data.cloud_breakdown.azure }}</h4>
+                    <small>Azure Assets</small>
+                </div>
+                <div class="col-4">
+                    <h4 class="text-primary">{{ data.cloud_breakdown.gcp }}</h4>
+                    <small>GCP Assets</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Severity Distribution -->
+<div class="row mb-4">
+    <div class="col-lg-6 mb-3">
+        <div class="chart-container">
+            <h3>Severity Distribution</h3>
+            <canvas id="severityChart" style="max-height: 300px;"></canvas>
+        </div>
+    </div>
+    <div class="col-lg-6 mb-3">
+        <div class="chart-container">
+            <h3>12-Week Trend Analysis</h3>
+            <canvas id="trendChart" style="max-height: 300px;"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- GRC Compliance Summary -->
+{% if data.grc_summary %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-gavel"></i> GRC Compliance Impact</h3>
+            <div class="row mt-3">
+                {% for framework, stats in data.grc_summary.items() %}
+                <div class="col-lg-6 mb-3">
+                    <div class="grc-framework-card">
+                        <h4>{{ framework }}</h4>
+                        <div class="grc-stat">
+                            <strong>{{ stats.total_findings }}</strong> Total Findings
+                        </div>
+                        <div class="grc-stat">
+                            <strong>{{ stats.critical }}</strong> Critical
+                        </div>
+                        <div class="grc-stat">
+                            <strong>{{ stats.high }}</strong> High
+                        </div>
+                        <div class="grc-stat">
+                            <strong>{{ stats.requirements_count }}</strong> Requirements Affected
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Top Vulnerabilities -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-list-ol"></i> Top 10 Vulnerabilities by Asset Impact</h3>
+            <table class="table table-hover mt-3">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Vulnerability</th>
+                        <th>Severity</th>
+                        <th>Affected Assets</th>
+                        <th>VPR Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vuln in data.top_vulnerabilities %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ vuln.plugin_name }}</td>
+                        <td><span class="badge badge-{{ vuln.severity }}">{{ vuln.severity|upper }}</span></td>
+                        <td><strong>{{ vuln.asset_count }}</strong></td>
+                        <td>{{ '%.1f'|format(vuln.vpr_score) if vuln.vpr_score else 'N/A' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Executive Summary -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-file-alt"></i> Executive Summary</h3>
+            <p class="lead mt-3">
+                <strong>Security Posture:</strong> The organization currently has 
+                <strong>{{ data.summary.total_findings }}</strong> active security findings across 
+                <strong>{{ data.summary.total_assets }}</strong> managed assets.
+            </p>
+            <p>
+                <strong>Critical Issues:</strong> There are 
+                <strong class="text-danger">{{ data.summary.critical_findings }}</strong> critical vulnerabilities 
+                requiring immediate attention and 
+                <strong class="text-warning">{{ data.summary.high_findings }}</strong> high-priority issues.
+            </p>
+            <p>
+                <strong>Trend Analysis:</strong> Findings have 
+                {% if data.trends.total < 0 %}
+                    <span class="text-success">decreased by {{ '%.1f'|format(data.trends.total|abs) }}%</span>
+                {% else %}
+                    <span class="text-danger">increased by {{ '%.1f'|format(data.trends.total) }}%</span>
+                {% endif %}
+                compared to the previous 30-day period.
+            </p>
+            {% if data.summary.attack_path_findings > 0 %}
+            <p>
+                <strong>Attack Surface:</strong> 
+                <strong class="text-danger">{{ data.summary.attack_path_findings }}</strong> vulnerabilities 
+                are part of identified attack paths, representing elevated risk exposure.
+            </p>
+            {% endif %}
+            {% if data.grc_stats.frameworks_affected > 0 %}
+            <p>
+                <strong>Compliance Impact:</strong> 
+                <strong>{{ data.grc_stats.frameworks_affected }}</strong> regulatory frameworks 
+                are currently impacted by active vulnerabilities, affecting 
+                <strong>{{ data.grc_stats.total_requirements }}</strong> specific requirements.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script>
+// Risk Gauge
+const riskCtx = document.getElementById('riskGauge').getContext('2d');
+new Chart(riskCtx, {
+    type: 'doughnut',
+    data: {
+        datasets: [{
+            data: [{{ data.risk_score }}, {{ 100 - data.risk_score }}],
+            backgroundColor: [
+                {% if data.risk_score > 70 %}'#e74c3c'{% elif data.risk_score > 40 %}'#f39c12'{% else %}'#27ae60'{% endif %},
+                '#ecf0f1'
+            ],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        circumference: 180,
+        rotation: 270,
+        cutout: '75%',
+        plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false }
+        }
+    }
+});
+
+// Compliance Gauge
+const complianceCtx = document.getElementById('complianceGauge').getContext('2d');
+new Chart(complianceCtx, {
+    type: 'doughnut',
+    data: {
+        datasets: [{
+            data: [{{ data.compliance_score }}, {{ 100 - data.compliance_score }}],
+            backgroundColor: [
+                {% if data.compliance_score > 70 %}'#27ae60'{% elif data.compliance_score > 40 %}'#f39c12'{% else %}'#e74c3c'{% endif %},
+                '#ecf0f1'
+            ],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        circumference: 180,
+        rotation: 270,
+        cutout: '75%',
+        plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false }
+        }
+    }
+});
+
+// Severity Distribution
+const severityCtx = document.getElementById('severityChart').getContext('2d');
+new Chart(severityCtx, {
+    type: 'bar',
+    data: {
+        labels: ['Critical', 'High', 'Medium', 'Low'],
+        datasets: [{
+            label: 'Current Findings',
+            data: [
+                {{ data.severity_current.critical }},
+                {{ data.severity_current.high }},
+                {{ data.severity_current.medium }},
+                {{ data.severity_current.low }}
+            ],
+            backgroundColor: ['#e74c3c', '#fd7e14', '#f39c12', '#3498db']
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { display: false }
+        },
+        scales: {
+            y: { beginAtZero: true }
+        }
+    }
+});
+
+// Cloud Distribution
+const cloudCtx = document.getElementById('cloudChart').getContext('2d');
+new Chart(cloudCtx, {
+    type: 'doughnut',
+    data: {
+        labels: ['AWS', 'Azure', 'GCP'],
+        datasets: [{
+            data: [
+                {{ data.cloud_breakdown.aws }},
+                {{ data.cloud_breakdown.azure }},
+                {{ data.cloud_breakdown.gcp }}
+            ],
+            backgroundColor: ['#FF9900', '#0089D6', '#4285F4']
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { position: 'bottom' }
+        }
+    }
+});
+
+// Trend Chart
+const trendCtx = document.getElementById('trendChart').getContext('2d');
+new Chart(trendCtx, {
+    type: 'line',
+    data: {
+        labels: {{ data.weekly_trends | map(attribute='week') | list | tojson }},
+        datasets: [{
+            label: 'Total Findings',
+            data: {{ data.weekly_trends | map(attribute='total') | list | tojson }},
+            borderColor: '#3498db',
+            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+            tension: 0.4,
+            fill: true
+        }, {
+            label: 'Critical',
+            data: {{ data.weekly_trends | map(attribute='critical') | list | tojson }},
+            borderColor: '#e74c3c',
+            tension: 0.4
+        }, {
+            label: 'High',
+            data: {{ data.weekly_trends | map(attribute='high') | list | tojson }},
+            borderColor: '#fd7e14',
+            tension: 0.4
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { position: 'bottom' }
+        },
+        scales: {
+            y: { beginAtZero: true }
+        }
+    }
+});
+</script>
+
+{% endblock %}
