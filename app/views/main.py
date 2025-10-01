@@ -1,22 +1,22 @@
-from flask import Blueprint, render_template, request, jsonify, current_app
+from flask import Blueprint, render_template, request, jsonify, current_app, make_response
 from sqlalchemy.orm import subqueryload
 from sqlalchemy import desc, func, case, or_
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import json
 import traceback
+import io
+import os
 
 from ..database import db
 from ..models import VulnerabilityFinding, AttackPathFinding, WASFinding, PluginComplianceMapping, ComplianceRequirement
 
-# Create blueprint with the name your app expects
+# Create blueprint
 main_bp = Blueprint('main', __name__)
 
+
 def get_grc_summary_for_findings(findings):
-    """
-    Generate GRC compliance summary from a list of findings.
-    Returns a dictionary with framework names as keys and statistics as values.
-    """
+    """Generate GRC compliance summary from findings"""
     grc_summary = defaultdict(lambda: {
         'total_findings': 0,
         'critical': 0,
@@ -36,12 +36,10 @@ def get_grc_summary_for_findings(findings):
                         mapping.compliance_requirement.requirement_id
                     )
                     
-                    # Count by severity
                     severity = (finding.severity or 'unknown').lower()
                     if severity in ['critical', 'high', 'medium', 'low']:
                         grc_summary[framework][severity] += 1
     
-    # Convert sets to counts for template
     result = {}
     for framework, data in grc_summary.items():
         result[framework] = {
@@ -55,12 +53,12 @@ def get_grc_summary_for_findings(findings):
     
     return result
 
+
 def get_dashboard_metrics():
-    """Calculate dashboard summary metrics with error handling"""
+    """Calculate dashboard summary metrics"""
     try:
         thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
         
-        # Base query for active findings
         base_query = db.session.query(VulnerabilityFinding).filter(
             VulnerabilityFinding.state.in_(['OPEN', 'REOPENED']),
             VulnerabilityFinding.severity.notin_(['info']),
@@ -69,25 +67,21 @@ def get_dashboard_metrics():
         
         total_active = base_query.count()
         
-        # Severity counts
         severity_counts = {}
         for sev in ['critical', 'high', 'medium', 'low']:
             count = base_query.filter(VulnerabilityFinding.severity == sev).count()
             severity_counts[sev] = count
         
-        # Attack path findings
         attack_path_count = base_query.filter(
             VulnerabilityFinding.is_in_attack_path == True
         ).count()
         
-        # Cloud counts
         cloud_counts = {
             'aws': base_query.filter(VulnerabilityFinding.asset_aws_ec2_instance_id.isnot(None)).count(),
             'azure': base_query.filter(VulnerabilityFinding.asset_azure_vm_id.isnot(None)).count(),
             'gcp': base_query.filter(VulnerabilityFinding.asset_gcp_instance_id.isnot(None)).count(),
         }
         
-        # Top assets
         top_assets_query = (
             base_query
             .with_entities(
@@ -100,7 +94,6 @@ def get_dashboard_metrics():
         )
         top_assets = [{'asset': row.asset, 'count': row.count} for row in top_assets_query.all()]
 
-        # Top plugins
         top_plugins_query = (
             base_query
             .with_entities(
@@ -138,9 +131,10 @@ def get_dashboard_metrics():
             'top_plugins': [],
         }
 
+
 @main_bp.route('/debug_grc')
 def debug_grc():
-    """Debug endpoint to check GRC mappings and matching"""
+    """Debug endpoint to check GRC mappings"""
     try:
         debug_info = {
             'timestamp': datetime.now().isoformat(),
@@ -150,7 +144,6 @@ def debug_grc():
             'matching_analysis': {}
         }
         
-        # Get GRC statistics
         total_requirements = db.session.query(ComplianceRequirement).count()
         total_mappings = db.session.query(PluginComplianceMapping).count()
         
@@ -159,7 +152,6 @@ def debug_grc():
             'total_plugin_mappings': total_mappings
         }
         
-        # Get sample of GRC mappings (first 20)
         sample_mappings = db.session.query(PluginComplianceMapping).join(
             ComplianceRequirement
         ).limit(20).all()
@@ -171,7 +163,6 @@ def debug_grc():
                 'requirement_id': mapping.compliance_requirement.requirement_id if mapping.compliance_requirement else None
             })
         
-        # Get unique plugin IDs from mappings
         mapped_plugin_ids = db.session.query(
             PluginComplianceMapping.plugin_id
         ).distinct().all()
@@ -180,7 +171,6 @@ def debug_grc():
         debug_info['grc_statistics']['unique_plugins_mapped'] = len(mapped_plugin_ids)
         debug_info['grc_statistics']['sample_mapped_plugin_ids'] = mapped_plugin_ids[:20]
         
-        # Get sample of findings with their plugin IDs (last 30 days, active)
         thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
         sample_findings = db.session.query(VulnerabilityFinding).filter(
             VulnerabilityFinding.state.in_(['OPEN', 'REOPENED']),
@@ -197,7 +187,6 @@ def debug_grc():
                 'mapping_count': len(finding.plugin_compliance_mappings)
             })
         
-        # Get unique plugin IDs from findings
         finding_plugin_ids = db.session.query(
             VulnerabilityFinding.plugin_id
         ).filter(
@@ -209,7 +198,6 @@ def debug_grc():
         debug_info['grc_statistics']['unique_plugins_in_findings'] = len(finding_plugin_ids)
         debug_info['grc_statistics']['sample_finding_plugin_ids'] = finding_plugin_ids[:20]
         
-        # Check for overlap
         mapped_set = set(mapped_plugin_ids)
         finding_set = set(finding_plugin_ids)
         overlap = mapped_set.intersection(finding_set)
@@ -222,7 +210,6 @@ def debug_grc():
             'sample_overlapping_plugin_ids': list(overlap)[:20]
         }
         
-        # Get count of findings WITH GRC mappings
         findings_with_grc = db.session.query(VulnerabilityFinding).join(
             PluginComplianceMapping,
             VulnerabilityFinding.plugin_id == PluginComplianceMapping.plugin_id
@@ -233,7 +220,6 @@ def debug_grc():
         
         debug_info['matching_analysis']['findings_with_grc_mappings'] = findings_with_grc
         
-        # Get some examples of findings WITH mappings
         findings_with_mappings = db.session.query(VulnerabilityFinding).options(
             subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
                 PluginComplianceMapping.compliance_requirement
@@ -262,127 +248,33 @@ def debug_grc():
         
         debug_info['examples_with_grc'] = examples_with_mappings
         
-        # Create HTML response
         html = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <title>GRC Mapping Debug</title>
             <style>
-                body {{ 
-                    font-family: monospace; 
-                    padding: 20px; 
-                    background: #1a1a1a; 
-                    color: #00ff00; 
-                }}
-                .section {{ 
-                    margin: 20px 0; 
-                    padding: 15px; 
-                    background: #2a2a2a; 
-                    border-left: 4px solid #00ff00; 
-                }}
+                body {{ font-family: monospace; padding: 20px; background: #1a1a1a; color: #00ff00; }}
+                .section {{ margin: 20px 0; padding: 15px; background: #2a2a2a; border-left: 4px solid #00ff00; }}
                 .good {{ color: #00ff00; }}
                 .warning {{ color: #ffaa00; }}
                 .bad {{ color: #ff0000; }}
                 h2 {{ color: #00aaff; }}
-                pre {{ 
-                    background: #000; 
-                    padding: 10px; 
-                    overflow-x: auto;
-                    color: #00ff00;
-                }}
-                .stat {{ 
-                    display: inline-block; 
-                    margin: 10px 20px 10px 0; 
-                    padding: 10px 15px; 
-                    background: #333; 
-                    border-radius: 5px;
-                }}
+                pre {{ background: #000; padding: 10px; overflow-x: auto; color: #00ff00; }}
+                .stat {{ display: inline-block; margin: 10px 20px 10px 0; padding: 10px 15px; background: #333; border-radius: 5px; }}
             </style>
         </head>
         <body>
-            <h1>🔍 GRC MAPPING DEBUG REPORT</h1>
+            <h1>GRC MAPPING DEBUG REPORT</h1>
             <p>Generated: {debug_info['timestamp']}</p>
-            
             <div class="section">
-                <h2>📊 GRC Statistics</h2>
-                <div class="stat">
-                    <strong>Total Requirements:</strong> 
-                    <span class="{'good' if total_requirements > 0 else 'bad'}">{total_requirements}</span>
-                </div>
-                <div class="stat">
-                    <strong>Total Plugin Mappings:</strong> 
-                    <span class="{'good' if total_mappings > 0 else 'bad'}">{total_mappings}</span>
-                </div>
-                <div class="stat">
-                    <strong>Unique Plugins Mapped:</strong> 
-                    <span class="{'good' if debug_info['grc_statistics']['unique_plugins_mapped'] > 0 else 'bad'}">
-                        {debug_info['grc_statistics']['unique_plugins_mapped']}
-                    </span>
-                </div>
-                <div class="stat">
-                    <strong>Unique Plugins in Findings:</strong> 
-                    <span class="{'good' if debug_info['grc_statistics']['unique_plugins_in_findings'] > 0 else 'bad'}">
-                        {debug_info['grc_statistics']['unique_plugins_in_findings']}
-                    </span>
-                </div>
+                <h2>GRC Statistics</h2>
+                <div class="stat"><strong>Total Requirements:</strong> <span class="{'good' if total_requirements > 0 else 'bad'}">{total_requirements}</span></div>
+                <div class="stat"><strong>Total Plugin Mappings:</strong> <span class="{'good' if total_mappings > 0 else 'bad'}">{total_mappings}</span></div>
             </div>
-            
             <div class="section">
-                <h2>🔗 Matching Analysis</h2>
-                <div class="stat">
-                    <strong>Overlapping Plugin IDs:</strong> 
-                    <span class="{'good' if debug_info['matching_analysis']['overlapping_plugins'] > 0 else 'warning'}">
-                        {debug_info['matching_analysis']['overlapping_plugins']}
-                    </span>
-                </div>
-                <div class="stat">
-                    <strong>Overlap Percentage:</strong> 
-                    <span class="{'good' if debug_info['matching_analysis']['overlap_percentage'] > 10 else 'warning' if debug_info['matching_analysis']['overlap_percentage'] > 0 else 'bad'}">
-                        {debug_info['matching_analysis']['overlap_percentage']}%
-                    </span>
-                </div>
-                <div class="stat">
-                    <strong>Findings WITH GRC Mappings:</strong> 
-                    <span class="{'good' if debug_info['matching_analysis']['findings_with_grc_mappings'] > 0 else 'bad'}">
-                        {debug_info['matching_analysis']['findings_with_grc_mappings']}
-                    </span>
-                </div>
-            </div>
-            
-            <div class="section">
-                <h2>🎯 Diagnosis</h2>
-                {"<p class='good'>✅ GRC mappings are working! Found " + str(debug_info['matching_analysis']['findings_with_grc_mappings']) + " findings with mappings.</p>" if debug_info['matching_analysis']['findings_with_grc_mappings'] > 0 else "<p class='bad'>❌ No findings match your GRC mappings. Check plugin IDs below.</p>"}
-                {"<p class='warning'>⚠️  Low overlap rate. Your GRC JSON may need more plugin IDs.</p>" if debug_info['matching_analysis']['overlap_percentage'] < 20 and debug_info['matching_analysis']['overlap_percentage'] > 0 else ""}
-            </div>
-            
-            <div class="section">
-                <h2>📋 Sample GRC Mappings (First 20)</h2>
-                <pre>{json.dumps(debug_info['sample_mappings'], indent=2)}</pre>
-            </div>
-            
-            <div class="section">
-                <h2>🐛 Sample Findings (First 20)</h2>
-                <pre>{json.dumps(debug_info['sample_findings'], indent=2)}</pre>
-            </div>
-            
-            {"<div class='section'><h2>✅ Examples of Findings WITH GRC Mappings</h2><pre>" + json.dumps(debug_info['examples_with_grc'], indent=2) + "</pre></div>" if debug_info['examples_with_grc'] else ""}
-            
-            <div class="section">
-                <h2>🔢 Plugin ID Comparison</h2>
-                <h3>Sample Mapped Plugin IDs (from GRC JSON):</h3>
-                <pre>{json.dumps(debug_info['grc_statistics']['sample_mapped_plugin_ids'], indent=2)}</pre>
-                
-                <h3>Sample Finding Plugin IDs (from Tenable):</h3>
-                <pre>{json.dumps(debug_info['grc_statistics']['sample_finding_plugin_ids'], indent=2)}</pre>
-                
-                <h3>Overlapping Plugin IDs (These SHOULD have GRC mappings):</h3>
-                <pre>{json.dumps(debug_info['matching_analysis']['sample_overlapping_plugin_ids'], indent=2)}</pre>
-            </div>
-            
-            <div class="section">
-                <h2>📥 Full JSON Data</h2>
-                <pre>{json.dumps(debug_info, indent=2)}</pre>
+                <h2>Full JSON Data</h2>
+                <pre>{json.dumps(debug_info, indent=2, default=str)}</pre>
             </div>
         </body>
         </html>
@@ -394,44 +286,40 @@ def debug_grc():
         return f"""
         <html>
         <body style="font-family: monospace; background: #1a1a1a; color: #ff0000; padding: 20px;">
-            <h1>❌ Error in GRC Debug</h1>
+            <h1>Error in GRC Debug</h1>
             <pre>{str(e)}</pre>
             <pre>{traceback.format_exc()}</pre>
         </body>
         </html>
         """, 500
 
+
 @main_bp.route('/')
 def dashboard():
-    """Main dashboard route with GRC summaries"""
+    """Main dashboard route"""
     try:
-        current_app.logger.info(f"Dashboard request - Severity: {request.args.get('severity')}, State: {request.args.get('state')}, Period: {request.args.get('time_period')}")
+        current_app.logger.info(f"Dashboard request - Severity: {request.args.get('severity')}")
         
-        # Start with base query
         query = db.session.query(VulnerabilityFinding)
         
-        # Get filter parameters
         selected_severity = request.args.get('severity', 'actionable')
         selected_state = request.args.get('state', 'active') 
         selected_time_period = request.args.get('time_period', '30_days')
         sort_by = request.args.get('sort_by', 'last_found')
         sort_direction = request.args.get('sort_direction', 'desc')
         
-        # Apply state filtering
         if selected_state == 'active':
             query = query.filter(VulnerabilityFinding.state.in_(['OPEN', 'REOPENED']))
         elif selected_state == 'fixed':
             query = query.filter(VulnerabilityFinding.state == 'FIXED')
         
-        # Apply severity filtering
         if selected_severity == 'actionable' or not selected_severity:
             query = query.filter(VulnerabilityFinding.severity.notin_(['info']))
         elif selected_severity in ['critical', 'high', 'medium', 'low']:
             query = query.filter(VulnerabilityFinding.severity == selected_severity)
         elif selected_severity == 'include_info':
-            pass  # No severity filter
+            pass
         
-        # Apply time period filtering
         if selected_time_period == '30_days':
             thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
             query = query.filter(VulnerabilityFinding.last_found >= thirty_days_ago)
@@ -439,7 +327,6 @@ def dashboard():
             seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
             query = query.filter(VulnerabilityFinding.last_found >= seven_days_ago)
         
-        # Apply sorting
         if sort_by == 'severity':
             severity_order = case(
                 (VulnerabilityFinding.severity == 'critical', 4),
@@ -459,22 +346,17 @@ def dashboard():
             else:
                 query = query.order_by(sort_column.desc().nullsfirst())
         
-        # CRITICAL: Eager load GRC relationships
         query = query.options(
             subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
                 PluginComplianceMapping.compliance_requirement
             )
         )
         
-        # Execute query
         findings = query.all()
         current_app.logger.info(f"Retrieved {len(findings)} filtered VM findings")
         
-        # Generate GRC summary for VM findings
         vm_grc_summary = get_grc_summary_for_findings(findings)
-        current_app.logger.info(f"VM GRC Summary: {len(vm_grc_summary)} frameworks affected")
         
-        # Get WAS findings with GRC
         was_query = db.session.query(WASFinding).filter(
             WASFinding.status == 'Active'
         ).options(
@@ -484,16 +366,12 @@ def dashboard():
         )
         was_findings = was_query.all()
         
-        # Generate GRC summary for WAS findings
         was_grc_summary = get_grc_summary_for_findings(was_findings)
-        current_app.logger.info(f"WAS GRC Summary: {len(was_grc_summary)} frameworks affected")
         
-        # Get attack path findings
         attack_path_findings = db.session.query(AttackPathFinding).order_by(
             AttackPathFinding.path_risk_score.desc()
         ).limit(10).all()
         
-        # Get dashboard metrics
         dashboard_data = get_dashboard_metrics()
         
         return render_template('index.html',
@@ -514,16 +392,15 @@ def dashboard():
         traceback.print_exc()
         return f"Error loading dashboard: {str(e)}", 500
 
+
 @main_bp.route('/grouped_findings')
 def grouped_findings():
-    """Grouped findings view with GRC summary"""
+    """Grouped findings view"""
     try:
-        # Get filter parameters
         selected_severity = request.args.get('severity', 'actionable')
         selected_state = request.args.get('state', 'active')
         selected_time_period = request.args.get('time_period', '30_days')
         
-        # Build query with same filtering logic
         query = db.session.query(VulnerabilityFinding)
         
         if selected_state == 'active':
@@ -543,7 +420,6 @@ def grouped_findings():
             seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
             query = query.filter(VulnerabilityFinding.last_found >= seven_days_ago)
         
-        # CRITICAL: Load GRC mappings eagerly
         query = query.options(
             subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
                 PluginComplianceMapping.compliance_requirement
@@ -552,17 +428,13 @@ def grouped_findings():
         
         all_findings = query.all()
         
-        # Generate GRC summary for grouped view
         grouped_grc_summary = get_grc_summary_for_findings(all_findings)
-        current_app.logger.info(f"Grouped GRC Summary: {len(grouped_grc_summary)} frameworks affected")
         
-        # Group findings by plugin WITH GRC MAPPINGS
-        grouped_findings = {}
+        grouped_findings_dict = {}
         for finding in all_findings:
             plugin_key = f"{finding.plugin_id}_{finding.plugin_name or 'Unknown'}"
             
-            if plugin_key not in grouped_findings:
-                # Get GRC mappings for this plugin
+            if plugin_key not in grouped_findings_dict:
                 grc_mappings = []
                 grc_frameworks = set()
                 if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
@@ -576,7 +448,7 @@ def grouped_findings():
                                 'description': mapping.compliance_requirement.description
                             })
                 
-                grouped_findings[plugin_key] = {
+                grouped_findings_dict[plugin_key] = {
                     'plugin_id': finding.plugin_id,
                     'plugin_name': finding.plugin_name or 'Unknown Plugin',
                     'severity': finding.severity,
@@ -585,14 +457,13 @@ def grouped_findings():
                     'description': finding.description,
                     'solution': finding.solution,
                     'grc_mappings': grc_mappings,
-                    'grc_frameworks': list(grc_frameworks),  # For summary display
+                    'grc_frameworks': list(grc_frameworks),
                     'affected_assets': [],
                     'asset_count': 0,
                     'first_found': finding.first_found,
                     'last_found': finding.last_found
                 }
             
-            # Add asset to the group
             asset_info = {
                 'hostname': finding.asset_hostname,
                 'ipv4': finding.asset_ipv4,
@@ -604,23 +475,19 @@ def grouped_findings():
                 'gcp_instance': finding.asset_gcp_instance_id,
                 'finding_id': finding.id
             }
-            grouped_findings[plugin_key]['affected_assets'].append(asset_info)
-            grouped_findings[plugin_key]['asset_count'] += 1
+            grouped_findings_dict[plugin_key]['affected_assets'].append(asset_info)
+            grouped_findings_dict[plugin_key]['asset_count'] += 1
             
-            # Update timeline
-            if finding.first_found and (not grouped_findings[plugin_key]['first_found'] or 
-                                      finding.first_found < grouped_findings[plugin_key]['first_found']):
-                grouped_findings[plugin_key]['first_found'] = finding.first_found
-            if finding.last_found and (not grouped_findings[plugin_key]['last_found'] or 
-                                     finding.last_found > grouped_findings[plugin_key]['last_found']):
-                grouped_findings[plugin_key]['last_found'] = finding.last_found
+            if finding.first_found and (not grouped_findings_dict[plugin_key]['first_found'] or 
+                                      finding.first_found < grouped_findings_dict[plugin_key]['first_found']):
+                grouped_findings_dict[plugin_key]['first_found'] = finding.first_found
+            if finding.last_found and (not grouped_findings_dict[plugin_key]['last_found'] or 
+                                     finding.last_found > grouped_findings_dict[plugin_key]['last_found']):
+                grouped_findings_dict[plugin_key]['last_found'] = finding.last_found
         
-        # Convert to list and sort
         severity_order = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1, 'info': 0}
-        grouped_list = list(grouped_findings.values())
+        grouped_list = list(grouped_findings_dict.values())
         grouped_list.sort(key=lambda x: (severity_order.get(x['severity'], 0), x['asset_count']), reverse=True)
-        
-        current_app.logger.info(f"Grouped {len(all_findings)} findings into {len(grouped_list)} unique vulnerabilities")
         
         return render_template('grouped_findings.html',
                              grouped_findings=grouped_list,
@@ -636,19 +503,17 @@ def grouped_findings():
         traceback.print_exc()
         return render_template('error.html', error=str(e)), 500
 
+
 @main_bp.route('/cloud_findings')
 def cloud_findings():
-    """Cloud findings view - shows vulnerabilities on cloud assets with GRC"""
+    """Cloud findings view"""
     try:
-        # Get filter parameters
         selected_cloud_provider = request.args.get('cloud_provider', 'all')
         selected_severity = request.args.get('severity', 'actionable')
         selected_time_period = request.args.get('time_period', '30_days')
         
-        # Build query for cloud findings
         query = db.session.query(VulnerabilityFinding)
         
-        # Filter to only cloud assets
         cloud_filter = or_(
             VulnerabilityFinding.asset_aws_ec2_instance_id.isnot(None),
             VulnerabilityFinding.asset_azure_vm_id.isnot(None),
@@ -656,7 +521,6 @@ def cloud_findings():
         )
         query = query.filter(cloud_filter)
         
-        # Apply cloud provider filtering
         if selected_cloud_provider == 'aws':
             query = query.filter(VulnerabilityFinding.asset_aws_ec2_instance_id.isnot(None))
         elif selected_cloud_provider == 'azure':
@@ -664,13 +528,11 @@ def cloud_findings():
         elif selected_cloud_provider == 'gcp':
             query = query.filter(VulnerabilityFinding.asset_gcp_instance_id.isnot(None))
         
-        # Apply severity filtering
         if selected_severity == 'actionable':
             query = query.filter(VulnerabilityFinding.severity.notin_(['info']))
         elif selected_severity in ['critical', 'high', 'medium', 'low']:
             query = query.filter(VulnerabilityFinding.severity == selected_severity)
         
-        # Apply time period filtering
         if selected_time_period == '30_days':
             thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
             query = query.filter(VulnerabilityFinding.last_found >= thirty_days_ago)
@@ -678,17 +540,14 @@ def cloud_findings():
             seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
             query = query.filter(VulnerabilityFinding.last_found >= seven_days_ago)
         
-        # Apply state filtering (active only for cloud findings)
         query = query.filter(VulnerabilityFinding.state.in_(['OPEN', 'REOPENED']))
         
-        # Load GRC mappings
         query = query.options(
             subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
                 PluginComplianceMapping.compliance_requirement
             )
         )
         
-        # Order by severity and last found
         severity_order = case(
             (VulnerabilityFinding.severity == 'critical', 4),
             (VulnerabilityFinding.severity == 'high', 3),
@@ -700,18 +559,13 @@ def cloud_findings():
         
         cloud_findings_list = query.all()
         
-        # Generate GRC summary for cloud findings
         cloud_grc_summary = get_grc_summary_for_findings(cloud_findings_list)
-        current_app.logger.info(f"Cloud GRC Summary: {len(cloud_grc_summary)} frameworks affected")
         
-        # Calculate cloud provider stats
         cloud_stats = {
             'aws': len([f for f in cloud_findings_list if f.asset_aws_ec2_instance_id]),
             'azure': len([f for f in cloud_findings_list if f.asset_azure_vm_id]),
             'gcp': len([f for f in cloud_findings_list if f.asset_gcp_instance_id])
         }
-        
-        current_app.logger.info(f"Retrieved {len(cloud_findings_list)} cloud asset vulnerabilities")
         
         return render_template('cloud_findings.html',
                              cloud_findings=cloud_findings_list,
@@ -725,35 +579,30 @@ def cloud_findings():
         current_app.logger.error(f"Error in cloud_findings: {e}")
         return render_template('error.html', error=str(e)), 500
 
+
 @main_bp.route('/was_findings')
 def was_findings():
-    """WAS findings view with GRC summary"""
+    """WAS findings view"""
     try:
-        # Get filter parameters
         selected_severity = request.args.get('severity', 'all')
         selected_status = request.args.get('status', 'active')
         
-        # Build query for WAS findings
         query = db.session.query(WASFinding)
         
-        # Apply status filtering
         if selected_status == 'active':
             query = query.filter(WASFinding.status == 'Active')
         elif selected_status == 'fixed':
             query = query.filter(WASFinding.status == 'Fixed')
         
-        # Apply severity filtering
         if selected_severity != 'all':
             query = query.filter(WASFinding.severity == selected_severity)
         
-        # CRITICAL: Load GRC mappings eagerly
         query = query.options(
             subqueryload(WASFinding.plugin_compliance_mappings).subqueryload(
                 PluginComplianceMapping.compliance_requirement
             )
         )
         
-        # Order by severity and last detected
         query = query.order_by(
             case(
                 (WASFinding.severity == 'critical', 4),
@@ -767,11 +616,7 @@ def was_findings():
         
         was_findings_list = query.all()
         
-        # Generate GRC summary for WAS findings
         was_specific_grc_summary = get_grc_summary_for_findings(was_findings_list)
-        current_app.logger.info(f"WAS Specific GRC Summary: {len(was_specific_grc_summary)} frameworks affected")
-        
-        current_app.logger.info(f"Retrieved {len(was_findings_list)} WAS findings with GRC mappings")
         
         return render_template('was_findings.html',
                              was_findings=was_findings_list,
@@ -784,19 +629,17 @@ def was_findings():
         traceback.print_exc()
         return render_template('error.html', error=str(e)), 500
 
+
 @main_bp.route('/executive_dashboard')
 def executive_dashboard():
-    """Executive-level security dashboard with high-level metrics and trends"""
+    """Executive dashboard with metrics and trends"""
     try:
         current_app.logger.info("Loading executive dashboard")
         
-        # Time periods for trend analysis
         now = datetime.now(timezone.utc)
         thirty_days_ago = now - timedelta(days=30)
         sixty_days_ago = now - timedelta(days=60)
-        ninety_days_ago = now - timedelta(days=90)
         
-        # Current period metrics (last 30 days)
         current_findings = db.session.query(VulnerabilityFinding).filter(
             VulnerabilityFinding.state.in_(['OPEN', 'REOPENED']),
             VulnerabilityFinding.severity.notin_(['info']),
@@ -807,7 +650,6 @@ def executive_dashboard():
             )
         ).all()
         
-        # Previous period metrics (30-60 days ago)
         previous_findings = db.session.query(VulnerabilityFinding).filter(
             VulnerabilityFinding.state.in_(['OPEN', 'REOPENED']),
             VulnerabilityFinding.severity.notin_(['info']),
@@ -815,11 +657,9 @@ def executive_dashboard():
             VulnerabilityFinding.last_found < thirty_days_ago
         ).all()
         
-        # Calculate key metrics
         total_current = len(current_findings)
         total_previous = len(previous_findings)
         
-        # Severity breakdown current
         severity_current = {
             'critical': len([f for f in current_findings if f.severity == 'critical']),
             'high': len([f for f in current_findings if f.severity == 'high']),
@@ -827,7 +667,6 @@ def executive_dashboard():
             'low': len([f for f in current_findings if f.severity == 'low'])
         }
         
-        # Severity breakdown previous
         severity_previous = {
             'critical': len([f for f in previous_findings if f.severity == 'critical']),
             'high': len([f for f in previous_findings if f.severity == 'high']),
@@ -835,7 +674,6 @@ def executive_dashboard():
             'low': len([f for f in previous_findings if f.severity == 'low'])
         }
         
-        # Calculate trends (percentage change)
         def calculate_trend(current, previous):
             if previous == 0:
                 return 100 if current > 0 else 0
@@ -849,7 +687,6 @@ def executive_dashboard():
             'low': calculate_trend(severity_current['low'], severity_previous['low'])
         }
         
-        # Mean Time To Remediate (MTTR) - findings that were fixed in last 30 days
         fixed_findings = db.session.query(VulnerabilityFinding).filter(
             VulnerabilityFinding.state == 'FIXED',
             VulnerabilityFinding.fixed_at >= thirty_days_ago,
@@ -866,11 +703,12 @@ def executive_dashboard():
             
             if remediation_times:
                 mttr_days = round(sum(remediation_times) / len(remediation_times), 1)
-                mttr_critical = round(sum([
+                critical_times = [
                     (f.fixed_at - f.first_found).days 
                     for f in fixed_findings 
                     if f.severity == 'critical' and f.first_found and f.fixed_at
-                ]) / max(len([f for f in fixed_findings if f.severity == 'critical']), 1), 1)
+                ]
+                mttr_critical = round(sum(critical_times) / len(critical_times), 1) if critical_times else 0
             else:
                 mttr_days = 0
                 mttr_critical = 0
@@ -878,7 +716,6 @@ def executive_dashboard():
             mttr_days = 0
             mttr_critical = 0
         
-        # Attack surface metrics
         total_assets = db.session.query(
             func.count(func.distinct(VulnerabilityFinding.asset_uuid))
         ).filter(
@@ -893,7 +730,6 @@ def executive_dashboard():
             VulnerabilityFinding.last_found >= thirty_days_ago
         ).scalar()
         
-        # Cloud presence
         cloud_assets = {
             'aws': len(set([f.asset_uuid for f in current_findings if f.asset_aws_ec2_instance_id])),
             'azure': len(set([f.asset_uuid for f in current_findings if f.asset_azure_vm_id])),
@@ -901,43 +737,33 @@ def executive_dashboard():
         }
         total_cloud_assets = cloud_assets['aws'] + cloud_assets['azure'] + cloud_assets['gcp']
         
-        # Attack path analysis
         attack_path_findings = len([f for f in current_findings if f.is_in_attack_path])
         attack_path_assets = len(set([f.asset_uuid for f in current_findings if f.is_in_attack_path]))
         
-        # GRC Compliance Summary
         grc_summary = get_grc_summary_for_findings(current_findings)
         
-        # Calculate compliance posture score (0-100)
-        # Higher score = better (fewer findings relative to requirements)
         if grc_summary:
             total_grc_findings = sum(fw['total_findings'] for fw in grc_summary.values())
             total_requirements = sum(fw['requirements_count'] for fw in grc_summary.values())
             
-            # Score: 100 - (findings per requirement ratio * 10)
             if total_requirements > 0:
                 findings_per_req = total_grc_findings / total_requirements
                 compliance_score = max(0, min(100, 100 - (findings_per_req * 10)))
             else:
                 compliance_score = 0
         else:
-            compliance_score = 100  # No frameworks = nothing to fail
+            compliance_score = 100
             total_grc_findings = 0
             total_requirements = 0
         
-        # Risk score calculation (0-100, higher = more risk)
-        # Weighted by severity: critical=10, high=5, medium=2, low=1
         risk_points = (
             severity_current['critical'] * 10 +
             severity_current['high'] * 5 +
             severity_current['medium'] * 2 +
             severity_current['low'] * 1
         )
-        
-        # Normalize to 0-100 scale (assuming 100 risk points = 100% risk)
         risk_score = min(100, risk_points)
         
-        # Top 10 vulnerabilities by asset count
         plugin_stats = {}
         for finding in current_findings:
             plugin_key = finding.plugin_id
@@ -956,7 +782,6 @@ def executive_dashboard():
             reverse=True
         )[:10]
         
-        # Weekly trend data (last 12 weeks)
         weekly_trends = []
         for week in range(12, 0, -1):
             week_start = now - timedelta(weeks=week)
@@ -1008,8 +833,6 @@ def executive_dashboard():
             'weekly_trends': weekly_trends
         }
         
-        current_app.logger.info(f"Executive dashboard loaded: {total_current} findings, Risk Score: {risk_score}")
-        
         return render_template('executive_dashboard.html', data=executive_data)
         
     except Exception as e:
@@ -1017,17 +840,22 @@ def executive_dashboard():
         traceback.print_exc()
         return f"Error loading executive dashboard: {str(e)}", 500
 
+
 @main_bp.route('/executive_dashboard/pdf')
 def executive_dashboard_pdf():
-    """Generate PDF export of executive dashboard"""
+    """Generate PDF export with ReportLab"""
     try:
-        from weasyprint import HTML, CSS
-        from flask import make_response
-        import io
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
+        from reportlab.platypus.flowables import HRFlowable
+        from reportlab.lib.enums import TA_CENTER
         
-        current_app.logger.info("Generating executive dashboard PDF")
+        COMPANY_NAME = current_app.config.get('COMPANY_NAME', 'Your Company Name')
+        COMPANY_LOGO_PATH = current_app.config.get('COMPANY_LOGO_PATH', None)
         
-        # Get the same data as the dashboard
         now = datetime.now(timezone.utc)
         thirty_days_ago = now - timedelta(days=30)
         sixty_days_ago = now - timedelta(days=60)
@@ -1036,10 +864,6 @@ def executive_dashboard_pdf():
             VulnerabilityFinding.state.in_(['OPEN', 'REOPENED']),
             VulnerabilityFinding.severity.notin_(['info']),
             VulnerabilityFinding.last_found >= thirty_days_ago
-        ).options(
-            subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
-                PluginComplianceMapping.compliance_requirement
-            )
         ).all()
         
         previous_findings = db.session.query(VulnerabilityFinding).filter(
@@ -1064,20 +888,15 @@ def executive_dashboard_pdf():
                 return 100 if current > 0 else 0
             return round(((current - previous) / previous) * 100, 1)
         
-        trends = {
-            'total': calculate_trend(total_current, total_previous)
-        }
+        trends = {'total': calculate_trend(total_current, total_previous)}
         
         total_assets = db.session.query(
             func.count(func.distinct(VulnerabilityFinding.asset_uuid))
-        ).filter(
-            VulnerabilityFinding.last_found >= thirty_days_ago
-        ).scalar()
+        ).filter(VulnerabilityFinding.last_found >= thirty_days_ago).scalar()
         
         attack_path_findings = len([f for f in current_findings if f.is_in_attack_path])
         grc_summary = get_grc_summary_for_findings(current_findings)
         
-        # Calculate risk score
         risk_points = (
             severity_current['critical'] * 10 +
             severity_current['high'] * 5 +
@@ -1086,259 +905,220 @@ def executive_dashboard_pdf():
         )
         risk_score = min(100, risk_points)
         
-        # Generate HTML for PDF
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Executive Security Dashboard Report</title>
-            <style>
-                @page {{
-                    size: A4;
-                    margin: 2cm;
-                }}
-                body {{
-                    font-family: 'Helvetica', 'Arial', sans-serif;
-                    color: #333;
-                    line-height: 1.6;
-                }}
-                .header {{
-                    text-align: center;
-                    border-bottom: 3px solid #2c3e50;
-                    padding-bottom: 20px;
-                    margin-bottom: 30px;
-                }}
-                .header h1 {{
-                    color: #2c3e50;
-                    margin: 0;
-                    font-size: 28pt;
-                }}
-                .header p {{
-                    color: #7f8c8d;
-                    margin: 10px 0 0 0;
-                }}
-                .metric-grid {{
-                    display: grid;
-                    grid-template-columns: 1fr 1fr 1fr;
-                    gap: 15px;
-                    margin: 20px 0;
-                }}
-                .metric-card {{
-                    border: 2px solid #ecf0f1;
-                    border-radius: 8px;
-                    padding: 15px;
-                    text-align: center;
-                }}
-                .metric-card h3 {{
-                    color: #7f8c8d;
-                    font-size: 11pt;
-                    margin: 0 0 10px 0;
-                    text-transform: uppercase;
-                }}
-                .metric-card .value {{
-                    font-size: 32pt;
-                    font-weight: bold;
-                    color: #2c3e50;
-                    margin: 10px 0;
-                }}
-                .metric-card.critical .value {{ color: #e74c3c; }}
-                .metric-card.high .value {{ color: #fd7e14; }}
-                .metric-card.risk .value {{ color: #e74c3c; }}
-                .metric-card.positive .value {{ color: #27ae60; }}
-                .trend {{
-                    font-size: 10pt;
-                    color: #7f8c8d;
-                }}
-                .trend.up {{ color: #e74c3c; }}
-                .trend.down {{ color: #27ae60; }}
-                .section {{
-                    margin: 30px 0;
-                    page-break-inside: avoid;
-                }}
-                .section h2 {{
-                    color: #2c3e50;
-                    border-bottom: 2px solid #3498db;
-                    padding-bottom: 10px;
-                    font-size: 18pt;
-                }}
-                table {{
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin: 15px 0;
-                }}
-                th {{
-                    background: #34495e;
-                    color: white;
-                    padding: 12px;
-                    text-align: left;
-                    font-size: 10pt;
-                }}
-                td {{
-                    padding: 10px 12px;
-                    border-bottom: 1px solid #ecf0f1;
-                    font-size: 9pt;
-                }}
-                tr:nth-child(even) {{
-                    background: #f8f9fa;
-                }}
-                .severity-badge {{
-                    display: inline-block;
-                    padding: 4px 12px;
-                    border-radius: 4px;
-                    color: white;
-                    font-weight: bold;
-                    font-size: 8pt;
-                }}
-                .severity-critical {{ background: #e74c3c; }}
-                .severity-high {{ background: #fd7e14; }}
-                .severity-medium {{ background: #f39c12; }}
-                .severity-low {{ background: #3498db; }}
-                .grc-grid {{
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 10px;
-                    margin: 15px 0;
-                }}
-                .grc-card {{
-                    border: 1px solid #3498db;
-                    border-radius: 6px;
-                    padding: 12px;
-                }}
-                .grc-card h4 {{
-                    color: #3498db;
-                    margin: 0 0 8px 0;
-                    font-size: 11pt;
-                }}
-                .grc-stat {{
-                    font-size: 9pt;
-                    margin: 5px 0;
-                }}
-                .footer {{
-                    margin-top: 40px;
-                    padding-top: 20px;
-                    border-top: 2px solid #ecf0f1;
-                    text-align: center;
-                    color: #7f8c8d;
-                    font-size: 9pt;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>Executive Security Dashboard</h1>
-                <p>Generated: {now.strftime('%B %d, %Y at %H:%M UTC')}</p>
-                <p>Reporting Period: Last 30 Days</p>
-            </div>
+        plugin_stats = {}
+        for finding in current_findings:
+            plugin_key = finding.plugin_id
+            if plugin_key not in plugin_stats:
+                plugin_stats[plugin_key] = {
+                    'plugin_name': finding.plugin_name,
+                    'severity': finding.severity,
+                    'asset_count': 0
+                }
+            plugin_stats[plugin_key]['asset_count'] += 1
+        
+        top_vulns = sorted(plugin_stats.values(), key=lambda x: x['asset_count'], reverse=True)[:10]
+        
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=24,
+                                     textColor=colors.HexColor('#2c3e50'), spaceAfter=10, alignment=TA_CENTER)
+        company_style = ParagraphStyle('CompanyName', parent=styles['Heading2'], fontSize=18,
+                                      textColor=colors.HexColor('#34495e'), spaceAfter=20, alignment=TA_CENTER, fontName='Helvetica-Bold')
+        heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=16,
+                                      textColor=colors.HexColor('#2c3e50'), spaceAfter=12, spaceBefore=12)
+        normal_style = styles['Normal']
+        
+        if COMPANY_LOGO_PATH and os.path.exists(COMPANY_LOGO_PATH):
+            try:
+                logo = Image(COMPANY_LOGO_PATH, width=2*inch, height=1*inch, kind='proportional')
+                logo.hAlign = 'CENTER'
+                elements.append(logo)
+                elements.append(Spacer(1, 0.2*inch))
+            except Exception as e:
+                current_app.logger.warning(f"Could not load logo: {e}")
+        
+        elements.append(Paragraph(COMPANY_NAME, company_style))
+        elements.append(Paragraph("Executive Security Dashboard", title_style))
+        elements.append(Paragraph(
+            f"Generated: {now.strftime('%B %d, %Y at %H:%M UTC')}<br/>Reporting Period: Last 30 Days",
+            ParagraphStyle('subtitle', parent=normal_style, alignment=TA_CENTER, textColor=colors.grey)
+        ))
+        elements.append(Spacer(1, 0.3*inch))
+        elements.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#2c3e50')))
+        elements.append(Spacer(1, 0.3*inch))
+        
+        trend_text = f"{trends['total']:+.0f}% vs Previous Period"
+        risk_status = 'High Risk' if risk_score > 70 else 'Moderate Risk' if risk_score > 40 else 'Low Risk'
+        
+        metrics_data = [
+            ['Metric', 'Value', 'Status'],
+            ['Critical Findings', str(severity_current['critical']), 'Immediate Action Required'],
+            ['High Findings', str(severity_current['high']), 'High Priority'],
+            ['Total Findings', str(total_current), trend_text],
+            ['Total Assets', str(total_assets), 'Under Management'],
+            ['Risk Score', f"{round(risk_score, 0)}/100", risk_status],
+        ]
+        
+        if attack_path_findings > 0:
+            metrics_data.append(['Attack Paths', str(attack_path_findings), 'Chained Vulnerabilities'])
+        
+        metrics_table = Table(metrics_data, colWidths=[2.5*inch, 1.5*inch, 2.5*inch])
+        metrics_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('FONTNAME', (0, 1), (1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+        ]))
+        
+        elements.append(metrics_table)
+        elements.append(Spacer(1, 0.4*inch))
+        
+        elements.append(Paragraph("Severity Distribution", heading_style))
+        elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#3498db')))
+        elements.append(Spacer(1, 0.2*inch))
+        
+        severity_data = [
+            ['Severity', 'Count', 'Percentage'],
+            ['CRITICAL', str(severity_current['critical']), f"{round(severity_current['critical']/max(total_current,1)*100, 1)}%"],
+            ['HIGH', str(severity_current['high']), f"{round(severity_current['high']/max(total_current,1)*100, 1)}%"],
+            ['MEDIUM', str(severity_current['medium']), f"{round(severity_current['medium']/max(total_current,1)*100, 1)}%"],
+            ['LOW', str(severity_current['low']), f"{round(severity_current['low']/max(total_current,1)*100, 1)}%"],
+        ]
+        
+        severity_table = Table(severity_data, colWidths=[2*inch, 2*inch, 2*inch])
+        severity_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#e74c3c')),
+            ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#fd7e14')),
+            ('BACKGROUND', (0, 3), (-1, 3), colors.HexColor('#f39c12')),
+            ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#3498db')),
+            ('TEXTCOLOR', (0, 1), (-1, 4), colors.whitesmoke),
+        ]))
+        
+        elements.append(severity_table)
+        elements.append(Spacer(1, 0.4*inch))
+        
+        if grc_summary:
+            elements.append(Paragraph("GRC Compliance Summary", heading_style))
+            elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#3498db')))
+            elements.append(Spacer(1, 0.2*inch))
             
-            <div class="metric-grid">
-                <div class="metric-card critical">
-                    <h3>Critical Findings</h3>
-                    <div class="value">{severity_current['critical']}</div>
-                    <div class="trend">Immediate Action Required</div>
-                </div>
-                <div class="metric-card high">
-                    <h3>High Findings</h3>
-                    <div class="value">{severity_current['high']}</div>
-                    <div class="trend">High Priority</div>
-                </div>
-                <div class="metric-card">
-                    <h3>Total Assets</h3>
-                    <div class="value">{total_assets}</div>
-                    <div class="trend">Under Management</div>
-                </div>
-            </div>
+            grc_data = [['Framework', 'Total Findings', 'Critical', 'High', 'Requirements']]
+            for fw, data in list(grc_summary.items())[:6]:
+                grc_data.append([fw, str(data['total_findings']), str(data['critical']), str(data['high']), str(data['requirements_count'])])
             
-            <div class="metric-grid">
-                <div class="metric-card risk">
-                    <h3>Risk Score</h3>
-                    <div class="value">{round(risk_score, 0)}/100</div>
-                    <div class="trend">{'High Risk' if risk_score > 70 else 'Moderate Risk' if risk_score > 40 else 'Low Risk'}</div>
-                </div>
-                <div class="metric-card">
-                    <h3>Attack Paths</h3>
-                    <div class="value">{attack_path_findings}</div>
-                    <div class="trend">Chained Vulnerabilities</div>
-                </div>
-                <div class="metric-card {'positive' if trends['total'] < 0 else ''}">
-                    <h3>30-Day Trend</h3>
-                    <div class="value">{trends['total']:+.0f}%</div>
-                    <div class="trend {'down' if trends['total'] < 0 else 'up'}">vs. Previous Period</div>
-                </div>
-            </div>
+            grc_table = Table(grc_data, colWidths=[2*inch, 1.2*inch, 1*inch, 1*inch, 1.3*inch])
+            grc_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ]))
             
-            <div class="section">
-                <h2>Severity Distribution</h2>
-                <table>
-                    <tr>
-                        <th>Severity</th>
-                        <th style="text-align: right;">Count</th>
-                        <th style="text-align: right;">Percentage</th>
-                    </tr>
-                    <tr>
-                        <td><span class="severity-badge severity-critical">CRITICAL</span></td>
-                        <td style="text-align: right;">{severity_current['critical']}</td>
-                        <td style="text-align: right;">{round(severity_current['critical']/max(total_current,1)*100, 1)}%</td>
-                    </tr>
-                    <tr>
-                        <td><span class="severity-badge severity-high">HIGH</span></td>
-                        <td style="text-align: right;">{severity_current['high']}</td>
-                        <td style="text-align: right;">{round(severity_current['high']/max(total_current,1)*100, 1)}%</td>
-                    </tr>
-                    <tr>
-                        <td><span class="severity-badge severity-medium">MEDIUM</span></td>
-                        <td style="text-align: right;">{severity_current['medium']}</td>
-                        <td style="text-align: right;">{round(severity_current['medium']/max(total_current,1)*100, 1)}%</td>
-                    </tr>
-                    <tr>
-                        <td><span class="severity-badge severity-low">LOW</span></td>
-                        <td style="text-align: right;">{severity_current['low']}</td>
-                        <td style="text-align: right;">{round(severity_current['low']/max(total_current,1)*100, 1)}%</td>
-                    </tr>
-                </table>
-            </div>
+            elements.append(grc_table)
+            elements.append(Spacer(1, 0.4*inch))
+        
+        if top_vulns:
+            elements.append(Paragraph("Top 10 Vulnerabilities by Asset Count", heading_style))
+            elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#3498db')))
+            elements.append(Spacer(1, 0.2*inch))
             
-            {'<div class="section"><h2>GRC Compliance Summary</h2><div class="grc-grid">' + ''.join([
-                f'<div class="grc-card"><h4>{fw}</h4>' +
-                f'<div class="grc-stat"><strong>{data["total_findings"]}</strong> Total Findings</div>' +
-                f'<div class="grc-stat"><strong>{data["critical"]}</strong> Critical | <strong>{data["high"]}</strong> High</div>' +
-                f'<div class="grc-stat"><strong>{data["requirements_count"]}</strong> Requirements Affected</div></div>'
-                for fw, data in list(grc_summary.items())[:4]
-            ]) + '</div></div>' if grc_summary else ''}
+            vuln_data = [['Rank', 'Vulnerability', 'Severity', 'Assets']]
+            for idx, vuln in enumerate(top_vulns[:10], 1):
+                vuln_name = vuln['plugin_name']
+                if vuln_name and len(vuln_name) > 50:
+                    vuln_name = vuln_name[:47] + "..."
+                vuln_data.append([str(idx), vuln_name or 'Unknown', (vuln['severity'] or 'unknown').upper(), str(vuln['asset_count'])])
             
-            <div class="section">
-                <h2>Executive Summary</h2>
-                <p><strong>Security Posture:</strong> The organization currently has <strong>{total_current}</strong> active security findings across <strong>{total_assets}</strong> managed assets.</p>
-                <p><strong>Critical Issues:</strong> There are <strong>{severity_current['critical']}</strong> critical vulnerabilities requiring immediate attention.</p>
-                <p><strong>Trend Analysis:</strong> Findings have {'increased' if trends['total'] > 0 else 'decreased'} by <strong>{abs(trends['total']):.1f}%</strong> compared to the previous 30-day period.</p>
-                {f'<p><strong>Attack Surface:</strong> <strong>{attack_path_findings}</strong> vulnerabilities are part of identified attack paths, representing elevated risk.</p>' if attack_path_findings > 0 else ''}
-                {f'<p><strong>Compliance:</strong> <strong>{len(grc_summary)}</strong> regulatory frameworks are impacted by current vulnerabilities.</p>' if grc_summary else ''}
-            </div>
+            vuln_table = Table(vuln_data, colWidths=[0.5*inch, 3.5*inch, 1*inch, 1*inch])
+            vuln_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+                ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ]))
             
-            <div class="footer">
-                <p><strong>Confidential - Executive Leadership</strong></p>
-                <p>Tenable Vulnerability Management Dashboard | Generated by Security Operations</p>
-            </div>
-        </body>
-        </html>
+            elements.append(vuln_table)
+            elements.append(Spacer(1, 0.4*inch))
+        
+        elements.append(PageBreak())
+        elements.append(Paragraph("Executive Summary", heading_style))
+        elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#3498db')))
+        elements.append(Spacer(1, 0.2*inch))
+        
+        trend_direction = 'increased' if trends['total'] > 0 else 'decreased'
+        risk_level = 'high' if risk_score > 70 else 'moderate' if risk_score > 40 else 'low'
+        attention_level = 'immediate' if risk_score > 70 else 'prompt' if risk_score > 40 else 'continued'
+        
+        summary_text = f"""
+        <b>Security Posture:</b> The organization currently has <b>{total_current}</b> active security findings 
+        across <b>{total_assets}</b> managed assets.<br/><br/>
+        <b>Critical Issues:</b> There are <b>{severity_current['critical']}</b> critical vulnerabilities requiring 
+        immediate attention and <b>{severity_current['high']}</b> high-priority issues.<br/><br/>
+        <b>Trend Analysis:</b> Findings have {trend_direction} by <b>{abs(trends['total']):.1f}%</b> compared to 
+        the previous 30-day period.<br/><br/>
+        <b>Risk Assessment:</b> The current risk score is <b>{round(risk_score, 0)}/100</b>, indicating {risk_level} 
+        risk exposure that requires {attention_level} attention from leadership.
         """
         
-        # Generate PDF
-        pdf_file = HTML(string=html_content).write_pdf()
+        if attack_path_findings > 0:
+            summary_text += f"<br/><br/><b>Attack Surface:</b> <b>{attack_path_findings}</b> vulnerabilities are part of identified attack paths."
         
-        # Create response
-        response = make_response(pdf_file)
+        if grc_summary:
+            summary_text += f"<br/><br/><b>Compliance Impact:</b> <b>{len(grc_summary)}</b> regulatory frameworks are impacted."
+        
+        elements.append(Paragraph(summary_text, normal_style))
+        elements.append(Spacer(1, 0.5*inch))
+        
+        elements.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#ecf0f1')))
+        elements.append(Spacer(1, 0.2*inch))
+        elements.append(Paragraph(
+            f"<b>Confidential - Executive Leadership</b><br/>{COMPANY_NAME} | Vulnerability Management Dashboard | Generated by Security Operations",
+            ParagraphStyle('footer', parent=normal_style, alignment=TA_CENTER, textColor=colors.grey, fontSize=8)
+        ))
+        
+        doc.build(elements)
+        pdf_data = buffer.getvalue()
+        buffer.close()
+        
+        response = make_response(pdf_data)
         response.headers['Content-Type'] = 'application/pdf'
         response.headers['Content-Disposition'] = f'attachment; filename=executive_security_report_{now.strftime("%Y%m%d")}.pdf'
         
         current_app.logger.info("Executive dashboard PDF generated successfully")
         return response
         
-    except ImportError:
-        return jsonify({
-            'error': 'PDF generation requires WeasyPrint library',
-            'install': 'pip install weasyprint'
-        }), 500
+    except ImportError as e:
+        current_app.logger.error(f"ReportLab not installed: {e}")
+        return jsonify({'error': 'PDF generation requires ReportLab library', 'install': 'pip install reportlab', 'details': str(e)}), 500
     except Exception as e:
         current_app.logger.error(f"Error generating PDF: {e}")
         traceback.print_exc()
