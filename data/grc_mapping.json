@@ -1,0 +1,308 @@
+[
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "6.2.2",
+      "description": "Establish and maintain a software vulnerability management program to identify and address vulnerabilities"
+    },
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "6.3.1",
+      "description": "Security vulnerabilities are identified and addressed"
+    },
+    "plugin_ids": [35453, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "4.2.1",
+      "description": "Strong cryptography and security protocols are implemented to safeguard PAN during transmission"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "2.2.2",
+      "description": "Vendor default accounts are managed"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "2.2.4",
+      "description": "System security parameters are configured to prevent misuse"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "6.4.3",
+      "description": "Software engineering techniques or other methods prevent or mitigate common software attacks"
+    },
+    "plugin_ids": [102082, 111071, 144327, 150162, 154988]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "8.3.1",
+      "description": "Multi-factor authentication (MFA) is implemented for all access"
+    },
+    "plugin_ids": [35453, 97085, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "1.4.2",
+      "description": "Network security controls are implemented"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.1",
+      "description": "The entity implements logical access security measures to protect against threats from sources outside its system boundaries"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.6",
+      "description": "The entity implements logical access security measures to protect against threats from sources within its system boundaries"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.7",
+      "description": "The entity restricts the transmission, movement, and removal of information to authorized internal and external users"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC7.1",
+      "description": "The entity uses detection and monitoring procedures to identify anomalies"
+    },
+    "plugin_ids": [35453, 63155, 63420, 87882, 97085, 102082, 111071, 144327, 150162]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC7.2",
+      "description": "The entity monitors system components and operation of those components"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC8.1",
+      "description": "The entity authorizes, designs, develops or acquires, configures, documents, tests, approves changes to infrastructure, data, software"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 150162, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.8",
+      "description": "The entity implements controls to prevent or detect and act upon the introduction of unauthorized software"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 32",
+      "description": "Security of processing - implement appropriate technical and organizational measures to ensure a level of security"
+    },
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 111071, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 32(1)(a)",
+      "description": "Pseudonymisation and encryption of personal data"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 32(1)(b)",
+      "description": "Ability to ensure ongoing confidentiality, integrity, availability and resilience of processing systems"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 150162, 154988, 156103, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 32(1)(d)",
+      "description": "Process for regularly testing, assessing and evaluating the effectiveness of technical and organizational measures"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 25",
+      "description": "Data protection by design and by default"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 5(1)(f)",
+      "description": "Integrity and confidentiality - processed in a manner that ensures appropriate security"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "11.3.1",
+      "description": "Internal vulnerability scans are performed"
+    },
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "11.3.2",
+      "description": "External vulnerability scans are performed"
+    },
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "12.3.1",
+      "description": "Security policies and procedures are documented and maintained"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC3.4",
+      "description": "The entity implements policies and procedures to protect information assets"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC5.1",
+      "description": "Control activities are designed and implemented to prevent or detect risks"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.2",
+      "description": "Prior to issuing system credentials, the entity registers and authorizes new users"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.3",
+      "description": "The entity authorizes, modifies, or removes access based on roles and responsibilities"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 33",
+      "description": "Notification of a personal data breach to the supervisory authority"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 35",
+      "description": "Data protection impact assessment"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "3.5.1",
+      "description": "Primary account numbers (PAN) are secured wherever stored"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "10.2.1",
+      "description": "Audit logs are implemented to support detection of anomalies and suspicious activity"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "A1.1",
+      "description": "The entity obtains or generates and uses encryption keys to protect data"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "A1.2",
+      "description": "The entity authorizes, modifies, or removes access to data and system resources"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  }
+]
