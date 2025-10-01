@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+
+{% block title %}Tenable Dashboard - Main{% endblock %}
+
+{% block content %}
+<!-- Navigation Tabs -->
+<ul class="nav nav-tabs mb-3" id="dashboardTabs" role="tablist">
+    <li class="nav-item">
+        <a class="nav-link active" id="vulnerability-tab">
+            <i class="fas fa-bug"></i> Vulnerabilities ({{ findings|length }})
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('main.executive_dashboard') }}">
+            <i class="fas fa-chart-line"></i> Executive Dashboard
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('main.grouped_findings') }}">
+            <i class="fas fa-layer-group"></i> Grouped View
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('main.was_findings') }}">
+            <i class="fas fa-globe"></i> Web App Security
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('main.cloud_findings') }}">
+            <i class="fas fa-cloud"></i> Cloud Security
+        </a>
+    </li>
+</ul>
+
+<!-- Control Panel -->
+<div class="control-panel">
+    <form method="GET" class="form-inline justify-content-between">
+        <div class="form-group mr-3">
+            <label for="severity" class="mr-2 text-white">
+                <i class="fas fa-exclamation-triangle"></i> Severity:
+            </label>
+            <select name="severity" id="severity" class="form-control form-control-sm">
+                <option value="actionable" {% if selected_severity == 'actionable' or not selected_severity %}selected{% endif %}>Actionable (No Info)</option>
+                <option value="critical" {% if selected_severity == 'critical' %}selected{% endif %}>Critical Only</option>
+                <option value="high" {% if selected_severity == 'high' %}selected{% endif %}>High Only</option>
+                <option value="medium" {% if selected_severity == 'medium' %}selected{% endif %}>Medium Only</option>
+                <option value="low" {% if selected_severity == 'low' %}selected{% endif %}>Low Only</option>
+                <option value="include_info" {% if selected_severity == 'include_info' %}selected{% endif %}>Include Info</option>
+            </select>
+        </div>
+
+        <div class="form-group mr-3">
+            <label for="state" class="mr-2 text-white">
+                <i class="fas fa-check-circle"></i> State:
+            </label>
+            <select name="state" id="state" class="form-control form-control-sm">
+                <option value="active" {% if selected_state == 'active' or not selected_state %}selected{% endif %}>Active</option>
+                <option value="fixed" {% if selected_state == 'fixed' %}selected{% endif %}>Fixed</option>
+                <option value="all" {% if selected_state == 'all' %}selected{% endif %}>All</option>
+            </select>
+        </div>
+
+        <div class="form-group mr-3">
+            <label for="time_period" class="mr-2 text-white">
+                <i class="fas fa-calendar-alt"></i> Period:
+            </label>
+            <select name="time_period" id="time_period" class="form-control form-control-sm">
+                <option value="30_days" {% if selected_time_period == '30_days' or not selected_time_period %}selected{% endif %}>Last 30 Days</option>
+                <option value="7_days" {% if selected_time_period == '7_days' %}selected{% endif %}>Last 7 Days</option>
+                <option value="all" {% if selected_time_period == 'all' %}selected{% endif %}>All Time</option>
+            </select>
+        </div>
+
+        <div>
+            <button type="submit" class="btn btn-primary btn-sm">
+                <i class="fas fa-filter"></i> Apply Filters
+            </button>
+            <a href="{{ url_for('main.grouped_findings') }}" class="btn btn-secondary btn-sm ml-2">
+                <i class="fas fa-layer-group"></i> Grouped View
+            </a>
+            <a href="{{ url_for('export.export_txt') }}" class="btn export-btn btn-sm ml-2">
+                <i class="fas fa-file-alt"></i> Export TXT
+            </a>
+        </div>
+    </form>
+</div>
+
+<!-- Dashboard Metrics -->
+<div class="row">
+    <div class="col-md-3">
+        <div class="metric-card">
+            <h5><i class="fas fa-bug"></i> Total Findings</h5>
+            <div class="count">{{ dashboard_data.total_active_findings or 0 }}</div>
+            <small>Active Vulnerabilities</small>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="metric-card">
+            <h5><i class="fas fa-exclamation-triangle"></i> Critical</h5>
+            <div class="count severity-critical">{{ dashboard_data.severity_counts.critical or 0 }}</div>
+            <small>Immediate Action Required</small>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="metric-card">
+            <h5><i class="fas fa-exclamation-circle"></i> High</h5>
+            <div class="count severity-high">{{ dashboard_data.severity_counts.high or 0 }}</div>
+            <small>High Priority Issues</small>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="metric-card">
+            <h5><i class="fas fa-route"></i> Attack Paths</h5>
+            <div class="count">{{ dashboard_data.attack_path_findings or 0 }}</div>
+            <small>In Attack Chains</small>
+        </div>
+    </div>
+</div>
+
+<!-- Info Panel -->
+{% if findings|length == 0 %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle"></i> 
+    <strong>No findings found with current filters.</strong> 
+    Try adjusting your severity, state, or time period filters above.
+    {% if selected_severity == 'actionable' %}
+    <br><small>Currently showing actionable findings only (excluding informational findings).</small>
+    {% endif %}
+</div>
+{% else %}
+<div class="alert alert-success">
+    <i class="fas fa-check-circle"></i> 
+    <strong>Showing {{ findings|length }} findings</strong> with current filters.
+    {% if selected_severity == 'actionable' or not selected_severity %}
+    (Actionable findings - excluding informational)
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Findings Table -->
+<div class="table-container">
+    <table class="table table-hover table-sm">
+        <thead>
+            <tr>
+                <th><i class="fas fa-puzzle-piece"></i> Plugin Name</th>
+                <th><i class="fas fa-server"></i> Asset</th>
+                <th><i class="fas fa-desktop"></i> OS</th>
+                <th><i class="fas fa-exclamation-triangle"></i> Severity</th>
+                <th><i class="fas fa-tachometer-alt"></i> VPR Score</th>
+                <th><i class="fas fa-info-circle"></i> Description</th>
+                <th><i class="fas fa-tools"></i> Solution</th>
+                <th><i class="fas fa-calendar-alt"></i> Last Found</th>
+                <th><i class="fas fa-check-circle"></i> Status</th>
+                <th><i class="fas fa-download"></i> Export</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for finding in findings %}
+            <tr>
+                <td>
+                    <strong>{{ finding.plugin_name or 'Unknown Plugin' }}</strong>
+                    <br><small class="text-muted">Plugin ID: {{ finding.plugin_id }}</small>
+                </td>
+                <td>
+                    <strong>{{ finding.asset_hostname or finding.asset_ipv4 or 'Unknown' }}</strong>
+                    {% if finding.asset_aws_ec2_instance_id %}
+                        <br><small><i class="fab fa-aws"></i> {{ finding.asset_aws_ec2_instance_id }}</small>
+                    {% endif %}
+                    {% if finding.asset_azure_vm_id %}
+                        <br><small><i class="fab fa-microsoft"></i> {{ finding.asset_azure_vm_id }}</small>
+                    {% endif %}
+                    {% if finding.asset_gcp_instance_id %}
+                        <br><small><i class="fab fa-google"></i> {{ finding.asset_gcp_instance_id }}</small>
+                    {% endif %}
+                </td>
+                <td>{{ finding.asset_os or 'N/A' }}</td>
+                <td>
+                    {% if finding.severity %}
+                        <span class="badge badge-{{ finding.severity|lower }}">{{ finding.severity|upper }}</span>
+                    {% else %}
+                        <span class="badge badge-secondary">UNKNOWN</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if finding.vpr_score %}
+                        <span class="badge badge-info">{{ "%.1f"|format(finding.vpr_score|float) }}</span>
+                    {% else %}
+                        <span class="text-muted">N/A</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="{{ finding.description or 'No description available' }}">
+                        {{ (finding.description or 'No description available')[:100] }}{% if finding.description and finding.description|length > 100 %}...{% endif %}
+                    </div>
+                </td>
+                <td>
+                    <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="{{ finding.solution or 'No solution available' }}">
+                        {{ (finding.solution or 'No solution available')[:100] }}{% if finding.solution and finding.solution|length > 100 %}...{% endif %}
+                    </div>
+                </td>
+                <td>{{ finding.last_found.strftime('%Y-%m-%d') if finding.last_found else 'N/A' }}</td>
+                <td>
+                    {% if finding.state == 'FIXED' %}
+                        <span class="badge badge-success">FIXED</span>
+                    {% elif finding.state == 'REOPENED' %}
+                        <span class="badge badge-warning">REOPENED</span>
+                    {% else %}
+                        <span class="badge badge-danger">{{ finding.state or 'OPEN' }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{{ url_for('export.export_single_finding_txt', finding_id=finding.id) }}" 
+                       class="btn btn-sm btn-success" title="Export as TXT">
+                        <i class="fas fa-file-alt"></i> TXT
+                    </a>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="10" class="text-center">
+                    <i class="fas fa-search"></i> No findings found with current filters.
+                    <br><small class="text-muted">Try adjusting your filters above.</small>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Summary Info -->
+{% if findings|length > 0 %}
+<div class="alert alert-info mt-3">
+    <strong>Summary:</strong> 
+    Displaying {{ findings|length }} findings
+    {% if selected_time_period == '30_days' %}from the last 30 days{% elif selected_time_period == '7_days' %}from the last 7 days{% endif %}
+    {% if selected_state == 'active' %}(active only){% elif selected_state == 'fixed' %}(fixed only){% endif %}.
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add click-to-copy functionality for asset names
+    document.querySelectorAll('td strong').forEach(element => {
+        element.style.cursor = 'pointer';
+        element.title = 'Click to copy';
+        element.addEventListener('click', function() {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(this.textContent).then(() => {
+                    const originalColor = this.style.color;
+                    this.style.color = '#28a745';
+                    setTimeout(() => {
+                        this.style.color = originalColor;
+                    }, 500);
+                });
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
