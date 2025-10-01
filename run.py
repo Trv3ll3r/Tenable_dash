@@ -1,150 +1,111 @@
+#!/usr/bin/env python3
+"""
+Tenable One Enhanced Dashboard - Application Entry Point
+"""
+
 import os
+import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
-class Config:
-    """Application configuration class"""
+def load_environment():
+    """Load environment variables with proper error handling"""
+    # Get the directory where this script is located
+    script_dir = Path(__file__).parent
+    env_file = script_dir / '.env'
     
-    # Flask settings
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
-    DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() in ['true', '1', 'yes']
+    print(f"🔧 Looking for .env file at: {env_file}")
     
-    # Database settings
-    DATABASE_DIR = os.environ.get('DATABASE_DIR') or os.path.join(os.getcwd(), 'data')
-    DATABASE_FILE = os.path.join(DATABASE_DIR, 'tenable_dashboard.db')
-    
-    # CRITICAL: Use absolute path for SQLite URI on Windows
-    DATABASE_FILE_ABSOLUTE = os.path.abspath(DATABASE_FILE)
-    DATABASE_FILE_NORMALIZED = DATABASE_FILE_ABSOLUTE.replace('\\', '/')
-    SQLALCHEMY_DATABASE_URI = f'sqlite:///{DATABASE_FILE_NORMALIZED}'
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
-    
-    # Tenable API credentials
-    TENABLE_ACCESS_KEY = os.environ.get('TENABLE_ACCESS_KEY')
-    TENABLE_SECRET_KEY = os.environ.get('TENABLE_SECRET_KEY')
-    
-    # Ermetic API configuration (for Tenable customers using Ermetic)
-    ERMETIC_API_URL = os.environ.get('ERMETIC_API_URL')
-    ERMETIC_API_TOKEN = os.environ.get('ERMETIC_API_TOKEN')
-    
-    # Optional Tenable services
-    TENABLE_CS_API_KEY = os.environ.get('TENABLE_CS_API_KEY')  # Container Security
-    TENABLE_CS_URL = os.environ.get('TENABLE_CS_URL', 'https://cloud.tenable.com')
-    
-    # Application settings
-    DEFAULT_DAYS_SINCE = int(os.environ.get('DEFAULT_DAYS_SINCE', '30'))
-    
-    # GRC mapping file path
-    GRC_JSON_PATH = os.environ.get('GRC_JSON_PATH') or os.path.join(os.getcwd(), 'data', 'grc_mappings.json')
-    
-    # Logging
-    LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
-    LOG_FILE = os.environ.get('LOG_FILE') or os.path.join(DATABASE_DIR, 'tenable_dashboard.log')
-    
-    # Server settings
-    HOST = os.environ.get('HOST', '127.0.0.1')  # Localhost only for security
-    PORT = int(os.environ.get('PORT', 5000))
-    
-    @staticmethod
-    def init_directories():
-        """Create necessary directories if they don't exist"""
-        try:
-            # Ensure database directory exists using absolute path
-            db_dir_abs = os.path.abspath(Config.DATABASE_DIR)
-            Path(db_dir_abs).mkdir(parents=True, exist_ok=True)
-            print(f"✅ Database directory created/verified: {db_dir_abs}")
-            
-            # Ensure we can write to the database file location
-            db_file_abs = os.path.abspath(Config.DATABASE_FILE)
-            try:
-                # Test write access by touching the file
-                Path(db_file_abs).touch(exist_ok=True)
-                print(f"✅ Database file access verified: {db_file_abs}")
-            except Exception as e:
-                print(f"❌ Cannot access database file location: {e}")
-                raise
-            
-            # Create logs directory if log file is in subdirectory
-            log_dir = os.path.dirname(Config.LOG_FILE)
-            if log_dir and log_dir != Config.DATABASE_DIR:
-                log_dir_abs = os.path.abspath(log_dir)
-                Path(log_dir_abs).mkdir(parents=True, exist_ok=True)
-                print(f"✅ Log directory created/verified: {log_dir_abs}")
-                
-        except Exception as e:
-            print(f"❌ Error creating directories: {e}")
-            raise
-    
-    @staticmethod
-    def validate_config():
-        """Validate required configuration"""
-        print("Validating configuration...")
+    if env_file.exists():
+        print(f"✅ Loading environment from: {env_file}")
+        load_dotenv(env_file)
         
-        # Check for either Tenable.io or Ermetic credentials
-        has_tenable_creds = Config.TENABLE_ACCESS_KEY and Config.TENABLE_SECRET_KEY
-        has_ermetic_creds = Config.ERMETIC_API_URL and Config.ERMETIC_API_TOKEN
+        # Verify critical variables are loaded
+        tenable_key = os.getenv('TENABLE_ACCESS_KEY')
+        tenable_secret = os.getenv('TENABLE_SECRET_KEY')
         
-        if has_tenable_creds:
-            print("✅ Tenable.io API credentials found")
-        elif has_ermetic_creds:
-            print("✅ Ermetic API credentials found")
+        if tenable_key and tenable_secret:
+            # Mask keys for security
+            key_masked = f"{tenable_key[:4]}...{tenable_key[-4:]}" if len(tenable_key) > 8 else "****"
+            secret_masked = f"{tenable_secret[:4]}...{tenable_secret[-4:]}" if len(tenable_secret) > 8 else "****"
+            print(f"✅ Tenable credentials loaded (Access: {key_masked}, Secret: {secret_masked})")
+            return True
         else:
-            print("❌ Neither Tenable.io nor Ermetic API credentials found")
-            print("Required: Either TENABLE_ACCESS_KEY + TENABLE_SECRET_KEY")
-            print("      OR: ERMETIC_API_URL + ERMETIC_API_TOKEN")
+            print("❌ Tenable API credentials not found in .env file")
+            print("\nRequired environment variables:")
+            print("  TENABLE_ACCESS_KEY=your_access_key")
+            print("  TENABLE_SECRET_KEY=your_secret_key")
             return False
-        
-        # Check optional credentials
-        if Config.TENABLE_CS_API_KEY:
-            print("✅ Container Security API key found")
-        else:
-            print("ℹ️  Container Security API key not found (optional)")
-        
-        # Validate paths
-        try:
-            Config.init_directories()
-            print(f"✅ Database directory: {Config.DATABASE_DIR}")
-            print(f"✅ GRC mappings path: {Config.GRC_JSON_PATH}")
-        except Exception as e:
-            print(f"❌ Error creating directories: {e}")
-            return False
-        
-        return True
+    else:
+        print("❌ .env file not found")
+        print(f"Please create a .env file at: {env_file}")
+        print("\nRequired content:")
+        print("TENABLE_ACCESS_KEY=your_access_key")
+        print("TENABLE_SECRET_KEY=your_secret_key")
+        return False
 
-class FeatureFlags:
-    """Feature flags to enable/disable functionality"""
+def run_initial_data_ingestion(app):
+    """Run initial data ingestion if requested"""
+    if '--skip-ingestion' in sys.argv:
+        print("⏭️  Skipping initial data ingestion (--skip-ingestion flag provided)")
+        return
     
-    ENABLE_ATTACK_PATH_ANALYSIS = os.environ.get('ENABLE_ATTACK_PATH_ANALYSIS', 'true').lower() in ['true', '1', 'yes']
-    ENABLE_WAS_FINDINGS = os.environ.get('ENABLE_WAS_FINDINGS', 'true').lower() in ['true', '1', 'yes']
-    ENABLE_GRC_MAPPING = os.environ.get('ENABLE_GRC_MAPPING', 'true').lower() in ['true', '1', 'yes']
-    ENABLE_CLOUD_METADATA = os.environ.get('ENABLE_CLOUD_METADATA', 'true').lower() in ['true', '1', 'yes']
-    ENABLE_EXPOSURE_SCORING = os.environ.get('ENABLE_EXPOSURE_SCORING', 'true').lower() in ['true', '1', 'yes']
-    ENABLE_CONTAINER_SECURITY = os.environ.get('ENABLE_CONTAINER_SECURITY', 'false').lower() in ['true', '1', 'yes']
+    try:
+        with app.app_context():
+            from app.services.ingestion import run_full_ingestion
+            print("\n📥 Starting initial data ingestion...")
+            run_full_ingestion()
+            print("✅ Initial data ingestion completed")
+    except Exception as e:
+        app.logger.error(f"Initial data ingestion failed: {e}")
+        print(f"❌ Initial data ingestion failed: {e}")
+        print("🔄 Application will continue - you can manually trigger ingestion from the web interface")
+
+def main():
+    """Main application entry point"""
+    print("=" * 60)
+    print("🛡️  TENABLE ONE ENHANCED DASHBOARD")
+    print("=" * 60)
     
-    @classmethod
-    def get_enabled_features(cls):
-        """Return list of enabled features"""
-        features = []
-        if cls.ENABLE_ATTACK_PATH_ANALYSIS:
-            features.append("Attack Path Analysis")
-        if cls.ENABLE_WAS_FINDINGS:
-            features.append("WAS Findings")
-        if cls.ENABLE_GRC_MAPPING:
-            features.append("GRC Compliance Mapping")
-        if cls.ENABLE_CLOUD_METADATA:
-            features.append("Cloud Metadata")
-        if cls.ENABLE_EXPOSURE_SCORING:
-            features.append("Exposure Scoring")
-        if cls.ENABLE_CONTAINER_SECURITY:
-            features.append("Container Security")
-        return features
-    
-    @classmethod
-    def print_feature_status(cls):
-        """Print current feature flag status"""
-        print("\nFeature Flags Status:")
-        print(f"  Attack Path Analysis: {'✅' if cls.ENABLE_ATTACK_PATH_ANALYSIS else '❌'}")
-        print(f"  WAS Findings: {'✅' if cls.ENABLE_WAS_FINDINGS else '❌'}")
-        print(f"  GRC Mapping: {'✅' if cls.ENABLE_GRC_MAPPING else '❌'}")
-        print(f"  Cloud Metadata: {'✅' if cls.ENABLE_CLOUD_METADATA else '❌'}")
-        print(f"  Exposure Scoring: {'✅' if cls.ENABLE_EXPOSURE_SCORING else '❌'}")
-        print(f"  Container Security: {'✅' if cls.ENABLE_CONTAINER_SECURITY else '❌'}")
+    try:
+        # Load environment variables
+        if not load_environment():
+            print("\n❌ Failed to load required environment variables")
+            return 1
+        
+        # Import and create Flask app
+        from app import create_app
+        from config import Config
+        
+        print("\n🏗️  Creating Flask application...")
+        app = create_app(Config)
+        
+        # Run initial data ingestion
+        run_initial_data_ingestion(app)
+        
+        # Start the web server
+        print("\n🌐 Starting web server...")
+        print(f"📊 Dashboard will be available at: http://{app.config['HOST']}:{app.config['PORT']}")
+        print("🔒 Server restricted to localhost for security")
+        print("\n⚡ Press Ctrl+C to stop the server")
+        print("=" * 60)
+        
+        app.run(
+            host=app.config['HOST'],
+            port=app.config['PORT'],
+            debug=app.config['DEBUG']
+        )
+        
+        return 0
+        
+    except KeyboardInterrupt:
+        print("\n\n👋 Application stopped by user")
+        return 0
+    except Exception as e:
+        print(f"\n💥 Fatal error starting application: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+if __name__ == '__main__':
+    exit(main())
