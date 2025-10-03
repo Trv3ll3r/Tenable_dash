@@ -73,6 +73,51 @@
   },
   {
     "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "11.3.1",
+      "description": "Internal vulnerability scans are performed"
+    },
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "11.3.2",
+      "description": "External vulnerability scans are performed"
+    },
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "12.3.1",
+      "description": "Security policies and procedures are documented and maintained"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "3.5.1",
+      "description": "Primary account numbers (PAN) are secured wherever stored"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "10.2.1",
+      "description": "Audit logs are implemented to support detection of anomalies and suspicious activity"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085]
+  },
+  {
+    "requirement": {
       "framework": "SOC 2",
       "version": "2017",
       "requirement_id": "CC6.1",
@@ -136,6 +181,60 @@
   },
   {
     "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC3.4",
+      "description": "The entity implements policies and procedures to protect information assets"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC5.1",
+      "description": "Control activities are designed and implemented to prevent or detect risks"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.2",
+      "description": "Prior to issuing system credentials, the entity registers and authorizes new users"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.3",
+      "description": "The entity authorizes, modifies, or removes access based on roles and responsibilities"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "A1.1",
+      "description": "The entity obtains or generates and uses encryption keys to protect data"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "A1.2",
+      "description": "The entity authorizes, modifies, or removes access to data and system resources"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
       "framework": "GDPR",
       "version": "2016/679",
       "requirement_id": "Article 32",
@@ -190,69 +289,6 @@
   },
   {
     "requirement": {
-      "framework": "PCI DSS",
-      "version": "4.0",
-      "requirement_id": "11.3.1",
-      "description": "Internal vulnerability scans are performed"
-    },
-    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
-  },
-  {
-    "requirement": {
-      "framework": "PCI DSS",
-      "version": "4.0",
-      "requirement_id": "11.3.2",
-      "description": "External vulnerability scans are performed"
-    },
-    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
-  },
-  {
-    "requirement": {
-      "framework": "PCI DSS",
-      "version": "4.0",
-      "requirement_id": "12.3.1",
-      "description": "Security policies and procedures are documented and maintained"
-    },
-    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
-  },
-  {
-    "requirement": {
-      "framework": "SOC 2",
-      "version": "2017",
-      "requirement_id": "CC3.4",
-      "description": "The entity implements policies and procedures to protect information assets"
-    },
-    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 172178]
-  },
-  {
-    "requirement": {
-      "framework": "SOC 2",
-      "version": "2017",
-      "requirement_id": "CC5.1",
-      "description": "Control activities are designed and implemented to prevent or detect risks"
-    },
-    "plugin_ids": [35453, 97085, 123459, 135718]
-  },
-  {
-    "requirement": {
-      "framework": "SOC 2",
-      "version": "2017",
-      "requirement_id": "CC6.2",
-      "description": "Prior to issuing system credentials, the entity registers and authorizes new users"
-    },
-    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
-  },
-  {
-    "requirement": {
-      "framework": "SOC 2",
-      "version": "2017",
-      "requirement_id": "CC6.3",
-      "description": "The entity authorizes, modifies, or removes access based on roles and responsibilities"
-    },
-    "plugin_ids": [35453, 97085, 123459, 135718]
-  },
-  {
-    "requirement": {
       "framework": "GDPR",
       "version": "2016/679",
       "requirement_id": "Article 33",
@@ -271,38 +307,236 @@
   },
   {
     "requirement": {
-      "framework": "PCI DSS",
-      "version": "4.0",
-      "requirement_id": "3.5.1",
-      "description": "Primary account numbers (PAN) are secured wherever stored"
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "RA-5",
+      "description": "Vulnerability Monitoring and Scanning - Monitor and scan for vulnerabilities in the system and applications"
     },
-    "plugin_ids": [63155, 63420, 64784, 65057, 87882]
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
   },
   {
     "requirement": {
-      "framework": "PCI DSS",
-      "version": "4.0",
-      "requirement_id": "10.2.1",
-      "description": "Audit logs are implemented to support detection of anomalies and suspicious activity"
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SI-2",
+      "description": "Flaw Remediation - Identify, report, and correct system flaws"
     },
-    "plugin_ids": [35453, 63155, 87882, 97085]
+    "plugin_ids": [35453, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
   },
   {
     "requirement": {
-      "framework": "SOC 2",
-      "version": "2017",
-      "requirement_id": "A1.1",
-      "description": "The entity obtains or generates and uses encryption keys to protect data"
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SC-8",
+      "description": "Transmission Confidentiality and Integrity - Protect the confidentiality and integrity of transmitted information"
     },
     "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
   },
   {
     "requirement": {
-      "framework": "SOC 2",
-      "version": "2017",
-      "requirement_id": "A1.2",
-      "description": "The entity authorizes, modifies, or removes access to data and system resources"
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SC-13",
+      "description": "Cryptographic Protection - Implement FIPS-validated or NSA-approved cryptography"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "IA-5",
+      "description": "Authenticator Management - Manage system authenticators"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CM-7",
+      "description": "Least Functionality - Configure systems to provide only essential capabilities"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CM-6",
+      "description": "Configuration Settings - Establish and maintain configuration settings for systems"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SI-10",
+      "description": "Information Input Validation - Check the validity of information inputs"
+    },
+    "plugin_ids": [102082, 111071, 144327, 150162, 154988]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "IA-2(1)",
+      "description": "Multi-Factor Authentication - Implement multi-factor authentication for network access"
+    },
+    "plugin_ids": [35453, 97085, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SC-7",
+      "description": "Boundary Protection - Monitor and control communications at external system boundaries"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "AC-3",
+      "description": "Access Enforcement - Enforce approved authorizations for logical access"
     },
     "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "AC-6",
+      "description": "Least Privilege - Employ the principle of least privilege"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SC-28",
+      "description": "Protection of Information at Rest - Protect the confidentiality and integrity of information at rest"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "AU-6",
+      "description": "Audit Record Review, Analysis, and Reporting - Review and analyze system audit records"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 150162]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SI-4",
+      "description": "System Monitoring - Monitor the system to detect attacks and indicators of potential attacks"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CM-3",
+      "description": "Configuration Change Control - Authorize, document, and control changes to the system"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 150162, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CM-8",
+      "description": "System Component Inventory - Develop and maintain an inventory of system components"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SI-3",
+      "description": "Malicious Code Protection - Implement malicious code protection mechanisms"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CA-2",
+      "description": "Control Assessments - Develop and implement a control assessment plan"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CA-7",
+      "description": "Continuous Monitoring - Develop and implement a continuous monitoring strategy"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 150162]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "PL-8",
+      "description": "Security and Privacy Architectures - Develop security and privacy architectures"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SA-11",
+      "description": "Developer Testing and Evaluation - Require developers to create and execute test plans"
+    },
+    "plugin_ids": [102082, 111071, 144327, 150162, 154988, 156103, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "IR-6",
+      "description": "Incident Reporting - Require personnel to report suspected incidents"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "RA-3",
+      "description": "Risk Assessment - Conduct risk assessments of the system"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "AC-2",
+      "description": "Account Management - Manage system accounts"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "AU-2",
+      "description": "Event Logging - Identify the types of events that the system is capable of logging"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085]
   }
 ]
