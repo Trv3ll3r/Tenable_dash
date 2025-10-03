@@ -652,8 +652,12 @@ def cloud_findings():
 def was_findings():
     """WAS findings view"""
     try:
+        from urllib.parse import urlparse
+        from collections import Counter
+        
         selected_severity = request.args.get('severity', 'all')
         selected_status = request.args.get('status', 'active')
+        selected_tld = request.args.get('tld', 'all')
         
         query = db.session.query(WASFinding)
         
@@ -684,13 +688,44 @@ def was_findings():
         
         was_findings_list = query.all()
         
+        # Extract TLDs from URLs and add to findings
+        tld_counter = Counter()
+        for finding in was_findings_list:
+            if finding.target_url:
+                try:
+                    parsed_url = urlparse(finding.target_url)
+                    domain = parsed_url.netloc or parsed_url.path
+                    if '.' in domain:
+                        tld = '.' + domain.split('.')[-1]
+                        finding.tld = tld
+                        tld_counter[tld] += 1
+                    else:
+                        finding.tld = None
+                except:
+                    finding.tld = None
+            else:
+                finding.tld = None
+        
+        # Filter by TLD if selected
+        if selected_tld and selected_tld != 'all':
+            was_findings_list = [f for f in was_findings_list if f.tld == selected_tld]
+        
+        # Get available TLDs sorted by count
+        available_tlds = [tld for tld, count in tld_counter.most_common()]
+        
+        # Create TLD summary
+        tld_summary = dict(tld_counter.most_common(20))  # Top 20 TLDs
+        
         was_specific_grc_summary = get_grc_summary_for_findings(was_findings_list)
         
         return render_template('was_findings.html',
                              was_findings=was_findings_list,
                              was_specific_grc_summary=was_specific_grc_summary,
                              selected_severity=selected_severity,
-                             selected_status=selected_status)
+                             selected_status=selected_status,
+                             selected_tld=selected_tld,
+                             available_tlds=available_tlds,
+                             tld_summary=tld_summary)
         
     except Exception as e:
         current_app.logger.error(f"Error in was_findings: {e}")
