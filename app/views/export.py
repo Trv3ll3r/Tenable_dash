@@ -7,7 +7,6 @@ from sqlalchemy.orm import subqueryload
 from ..database import db
 from ..models import VulnerabilityFinding, WASFinding, PluginComplianceMapping, ComplianceRequirement
 
-# Create blueprint
 export_bp = Blueprint('export', __name__)
 
 def generate_csv_content(findings):
@@ -15,17 +14,15 @@ def generate_csv_content(findings):
     csv_buffer = io.StringIO()
     csv_writer = csv.writer(csv_buffer)
 
-    # Enhanced header with GRC data
     header = [
         "Plugin Name", "Plugin ID", "Asset Hostname", "Asset IPv4", "Severity", "VPR Score",
         "CVSSv3 Base Score", "Description", "Solution", "First Found", "Last Found",
         "State", "Cloud Provider", "Attack Path Score", "Attack Path Involved", 
-        "GRC Frameworks", "GRC Requirements", "Asset OS"
+        "GRC Frameworks", "GRC Requirements", "NIST Requirements", "Asset OS"
     ]
     csv_writer.writerow(header)
 
     for finding in findings:
-        # Determine cloud provider
         cloud_provider = "N/A"
         if finding.asset_aws_ec2_instance_id:
             cloud_provider = "AWS"
@@ -34,20 +31,26 @@ def generate_csv_content(findings):
         elif finding.asset_gcp_instance_id:
             cloud_provider = "GCP"
 
-        # Compile GRC compliance data
         grc_frameworks = []
         grc_requirements = []
+        nist_requirements = []
         
         if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
             for mapping in finding.plugin_compliance_mappings:
                 if mapping.compliance_requirement:
-                    grc_frameworks.append(mapping.compliance_requirement.framework)
-                    grc_requirements.append(f"{mapping.compliance_requirement.framework}: {mapping.compliance_requirement.requirement_id}")
+                    framework = mapping.compliance_requirement.framework
+                    req_id = mapping.compliance_requirement.requirement_id
+                    
+                    grc_frameworks.append(framework)
+                    grc_requirements.append(f"{framework}: {req_id}")
+                    
+                    if framework == 'NIST 800-53':
+                        nist_requirements.append(req_id)
         
         grc_frameworks_str = " | ".join(set(grc_frameworks)) if grc_frameworks else "N/A"
         grc_requirements_str = " | ".join(grc_requirements) if grc_requirements else "N/A"
+        nist_requirements_str = " | ".join(nist_requirements) if nist_requirements else "N/A"
 
-        # Safely handle None values and long text
         description = finding.description or "No description"
         if len(description) > 500:
             description = description[:497] + "..."
@@ -74,6 +77,7 @@ def generate_csv_content(findings):
             "Yes" if hasattr(finding, 'is_in_attack_path') and finding.is_in_attack_path else "No",
             grc_frameworks_str,
             grc_requirements_str,
+            nist_requirements_str,
             finding.asset_os or ""
         ]
         csv_writer.writerow(row)
@@ -90,11 +94,11 @@ def generate_txt_content(findings):
     content.append("=" * 80)
     content.append("")
 
-    # Calculate summary statistics
     severity_counts = {}
     attack_path_count = 0
     cloud_count = 0
     grc_mapped_count = 0
+    nist_mapped_count = 0
     
     for finding in findings:
         severity = finding.severity or 'unknown'
@@ -107,6 +111,10 @@ def generate_txt_content(findings):
             cloud_count += 1
         if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
             grc_mapped_count += 1
+            for mapping in finding.plugin_compliance_mappings:
+                if mapping.compliance_requirement and mapping.compliance_requirement.framework == 'NIST 800-53':
+                    nist_mapped_count += 1
+                    break
 
     content.append("EXECUTIVE SUMMARY:")
     content.append("-" * 30)
@@ -117,6 +125,7 @@ def generate_txt_content(findings):
     content.append(f"ATTACK PATH FINDINGS: {attack_path_count}")
     content.append(f"CLOUD FINDINGS: {cloud_count}")
     content.append(f"GRC MAPPED FINDINGS: {grc_mapped_count}")
+    content.append(f"NIST 800-53 MAPPED: {nist_mapped_count}")
     content.append("")
     content.append("=" * 80)
     content.append("")
@@ -182,11 +191,31 @@ def generate_txt_content(findings):
             content.append("⚠️ PART OF ATTACK PATH")
             content.append("")
             
-        # GRC COMPLIANCE MAPPINGS
         if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
-            content.append("GRC COMPLIANCE IMPACT:")
+            nist_mappings = []
+            other_mappings = []
+            
             for mapping in finding.plugin_compliance_mappings:
                 if mapping.compliance_requirement:
+                    if mapping.compliance_requirement.framework == 'NIST 800-53':
+                        nist_mappings.append(mapping)
+                    else:
+                        other_mappings.append(mapping)
+            
+            if nist_mappings:
+                content.append("NIST 800-53 COMPLIANCE IMPACT:")
+                for mapping in nist_mappings:
+                    content.append(f"  • {mapping.compliance_requirement.requirement_id}")
+                    if mapping.compliance_requirement.description:
+                        desc = mapping.compliance_requirement.description
+                        if len(desc) > 100:
+                            desc = desc[:100] + "..."
+                        content.append(f"    {desc}")
+                content.append("")
+            
+            if other_mappings:
+                content.append("OTHER GRC COMPLIANCE IMPACT:")
+                for mapping in other_mappings:
                     content.append(f"  • {mapping.compliance_requirement.framework}: "
                                  f"{mapping.compliance_requirement.requirement_id}")
                     if mapping.compliance_requirement.description:
@@ -194,7 +223,7 @@ def generate_txt_content(findings):
                         if len(desc) > 100:
                             desc = desc[:100] + "..."
                         content.append(f"    {desc}")
-            content.append("")
+                content.append("")
         else:
             content.append("GRC COMPLIANCE IMPACT: None configured")
             content.append("")
@@ -217,7 +246,6 @@ def generate_txt_content(findings):
 def export_csv():
     """Export all findings to CSV"""
     try:
-        # Get all active findings excluding info
         findings = db.session.query(VulnerabilityFinding).options(
             subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
                 PluginComplianceMapping.compliance_requirement
@@ -288,14 +316,12 @@ def export_single_finding_txt(finding_id):
 
 @export_bp.route('/export_grouped_findings_txt')
 def export_grouped_findings_txt():
-    """Export grouped findings as TXT with GRC mappings"""
+    """Export grouped findings as TXT with GRC and NIST mappings"""
     try:
-        # Get filter parameters (same as grouped_findings view)
         selected_severity = request.args.get('severity', 'actionable')
         selected_state = request.args.get('state', 'active')
         selected_time_period = request.args.get('time_period', '30_days')
         
-        # Build query
         query = db.session.query(VulnerabilityFinding)
         
         if selected_state == 'active':
@@ -315,7 +341,6 @@ def export_grouped_findings_txt():
             seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
             query = query.filter(VulnerabilityFinding.last_found >= seven_days_ago)
         
-        # Load GRC mappings
         query = query.options(
             subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
                 PluginComplianceMapping.compliance_requirement
@@ -324,22 +349,26 @@ def export_grouped_findings_txt():
         
         all_findings = query.all()
         
-        # Group findings by plugin
         grouped_findings = {}
         for finding in all_findings:
             plugin_key = f"{finding.plugin_id}"
             
             if plugin_key not in grouped_findings:
-                # Get GRC mappings for this plugin
                 grc_mappings = []
+                nist_mappings = []
+                
                 if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
                     for mapping in finding.plugin_compliance_mappings:
                         if mapping.compliance_requirement:
-                            grc_mappings.append({
+                            mapping_data = {
                                 'framework': mapping.compliance_requirement.framework,
                                 'requirement_id': mapping.compliance_requirement.requirement_id,
                                 'description': mapping.compliance_requirement.description
-                            })
+                            }
+                            grc_mappings.append(mapping_data)
+                            
+                            if mapping.compliance_requirement.framework == 'NIST 800-53':
+                                nist_mappings.append(mapping_data)
                 
                 grouped_findings[plugin_key] = {
                     'plugin_id': finding.plugin_id,
@@ -349,11 +378,11 @@ def export_grouped_findings_txt():
                     'description': finding.description,
                     'solution': finding.solution,
                     'grc_mappings': grc_mappings,
+                    'nist_mappings': nist_mappings,
                     'affected_assets': [],
                     'asset_count': 0
                 }
             
-            # Add asset to group
             asset_str = finding.asset_hostname or finding.asset_ipv4 or 'Unknown'
             if finding.asset_aws_ec2_instance_id:
                 asset_str += f" (AWS: {finding.asset_aws_ec2_instance_id})"
@@ -365,7 +394,6 @@ def export_grouped_findings_txt():
             grouped_findings[plugin_key]['affected_assets'].append(asset_str)
             grouped_findings[plugin_key]['asset_count'] += 1
         
-        # Generate TXT content
         content = []
         content.append("=" * 80)
         content.append("TENABLE GROUPED VULNERABILITY FINDINGS REPORT")
@@ -375,7 +403,6 @@ def export_grouped_findings_txt():
         content.append("=" * 80)
         content.append("")
         
-        # Sort by severity and asset count
         severity_order = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1}
         sorted_groups = sorted(
             grouped_findings.values(),
@@ -396,7 +423,7 @@ def export_grouped_findings_txt():
             
             content.append("")
             content.append("AFFECTED ASSETS:")
-            for asset in group['affected_assets'][:50]:  # Limit to first 50
+            for asset in group['affected_assets'][:50]:
                 content.append(f"  • {asset}")
             if group['asset_count'] > 50:
                 content.append(f"  ... and {group['asset_count'] - 50} more assets")
@@ -419,10 +446,21 @@ def export_grouped_findings_txt():
                 content.append(sol_text)
                 content.append("")
             
-            # GRC COMPLIANCE MAPPINGS
-            if group['grc_mappings']:
-                content.append("GRC COMPLIANCE IMPACT:")
-                for mapping in group['grc_mappings']:
+            if group['nist_mappings']:
+                content.append("NIST 800-53 COMPLIANCE IMPACT:")
+                for mapping in group['nist_mappings']:
+                    content.append(f"  • {mapping['requirement_id']}")
+                    if mapping['description']:
+                        desc = mapping['description']
+                        if len(desc) > 100:
+                            desc = desc[:100] + "..."
+                        content.append(f"    {desc}")
+                content.append("")
+            
+            other_grc = [m for m in group['grc_mappings'] if m['framework'] != 'NIST 800-53']
+            if other_grc:
+                content.append("OTHER GRC COMPLIANCE IMPACT:")
+                for mapping in other_grc:
                     content.append(f"  • {mapping['framework']}: {mapping['requirement_id']}")
                     if mapping['description']:
                         desc = mapping['description']
@@ -430,7 +468,8 @@ def export_grouped_findings_txt():
                             desc = desc[:100] + "..."
                         content.append(f"    {desc}")
                 content.append("")
-            else:
+            
+            if not group['grc_mappings']:
                 content.append("GRC COMPLIANCE IMPACT: None configured")
                 content.append("")
             
@@ -451,11 +490,9 @@ def export_grouped_findings_txt():
 def export_was_findings_txt():
     """Export WAS findings as TXT with GRC mappings"""
     try:
-        # Get filter parameters
         selected_severity = request.args.get('severity', 'all')
         selected_status = request.args.get('status', 'active')
         
-        # Build query
         query = db.session.query(WASFinding)
         
         if selected_status == 'active':
@@ -466,7 +503,6 @@ def export_was_findings_txt():
         if selected_severity != 'all':
             query = query.filter(WASFinding.severity == selected_severity)
         
-        # Load GRC mappings
         query = query.options(
             subqueryload(WASFinding.plugin_compliance_mappings).subqueryload(
                 PluginComplianceMapping.compliance_requirement
@@ -475,7 +511,6 @@ def export_was_findings_txt():
         
         was_findings = query.all()
         
-        # Generate TXT content
         content = []
         content.append("=" * 80)
         content.append("TENABLE WEB APPLICATION SECURITY FINDINGS REPORT")
@@ -484,7 +519,6 @@ def export_was_findings_txt():
         content.append("=" * 80)
         content.append("")
         
-        # Calculate summary
         severity_counts = {}
         grc_mapped_count = 0
         
@@ -543,7 +577,6 @@ def export_was_findings_txt():
                 content.append(sol_text)
                 content.append("")
             
-            # GRC COMPLIANCE MAPPINGS
             if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
                 content.append("GRC COMPLIANCE IMPACT:")
                 for mapping in finding.plugin_compliance_mappings:
@@ -582,9 +615,8 @@ def export_was_findings_txt():
 
 @export_bp.route('/export_single_grouped_finding_txt/<int:plugin_id>')
 def export_single_grouped_finding_txt(plugin_id):
-    """Export a single grouped finding (all instances of a vulnerability) as TXT"""
+    """Export a single grouped finding (all instances of a vulnerability) as TXT with NIST"""
     try:
-        # Get all findings for this plugin
         findings = db.session.query(VulnerabilityFinding).options(
             subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
                 PluginComplianceMapping.compliance_requirement
@@ -597,10 +629,8 @@ def export_single_grouped_finding_txt(plugin_id):
         if not findings:
             return "No findings found for this plugin", 404
         
-        # Get plugin info from first finding
         first_finding = findings[0]
         
-        # Generate grouped TXT content
         content = []
         content.append("=" * 80)
         content.append("TENABLE GROUPED VULNERABILITY TICKET")
@@ -648,11 +678,31 @@ def export_single_grouped_finding_txt(plugin_id):
             content.append(first_finding.solution)
             content.append("")
         
-        # GRC COMPLIANCE MAPPINGS
         if hasattr(first_finding, 'plugin_compliance_mappings') and first_finding.plugin_compliance_mappings:
-            content.append("GRC COMPLIANCE IMPACT:")
+            nist_mappings = []
+            other_mappings = []
+            
             for mapping in first_finding.plugin_compliance_mappings:
                 if mapping.compliance_requirement:
+                    if mapping.compliance_requirement.framework == 'NIST 800-53':
+                        nist_mappings.append(mapping)
+                    else:
+                        other_mappings.append(mapping)
+            
+            if nist_mappings:
+                content.append("NIST 800-53 COMPLIANCE IMPACT:")
+                for mapping in nist_mappings:
+                    content.append(f"  • {mapping.compliance_requirement.requirement_id}")
+                    if mapping.compliance_requirement.description:
+                        desc = mapping.compliance_requirement.description
+                        if len(desc) > 100:
+                            desc = desc[:100] + "..."
+                        content.append(f"    {desc}")
+                content.append("")
+            
+            if other_mappings:
+                content.append("OTHER GRC COMPLIANCE IMPACT:")
+                for mapping in other_mappings:
                     content.append(f"  • {mapping.compliance_requirement.framework}: "
                                  f"{mapping.compliance_requirement.requirement_id}")
                     if mapping.compliance_requirement.description:
@@ -660,13 +710,12 @@ def export_single_grouped_finding_txt(plugin_id):
                         if len(desc) > 100:
                             desc = desc[:100] + "..."
                         content.append(f"    {desc}")
-            content.append("")
+                content.append("")
         else:
             content.append("GRC COMPLIANCE IMPACT: None configured")
             content.append("")
         
         content.append("TIMELINE:")
-        # Get earliest first_found and latest last_found
         first_dates = [f.first_found for f in findings if f.first_found]
         last_dates = [f.last_found for f in findings if f.last_found]
         
@@ -701,7 +750,6 @@ def export_single_was_finding_txt(finding_id):
         if not finding:
             return "WAS Finding not found", 404
         
-        # Generate ticket-ready text format
         content = []
         content.append("=" * 80)
         content.append("WEB APPLICATION SECURITY FINDING - TICKET")
@@ -742,7 +790,6 @@ def export_single_was_finding_txt(finding_id):
             content.append(finding.solution)
             content.append("")
         
-        # GRC COMPLIANCE MAPPINGS
         if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
             content.append("GRC COMPLIANCE IMPACT:")
             for mapping in finding.plugin_compliance_mappings:
