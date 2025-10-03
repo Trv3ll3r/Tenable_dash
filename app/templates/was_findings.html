@@ -54,6 +54,18 @@
             </select>
         </div>
 
+        <div class="form-group mr-3">
+            <label for="tld" class="mr-2 text-white">
+                <i class="fas fa-globe-americas"></i> TLD:
+            </label>
+            <select name="tld" id="tld" class="form-control form-control-sm">
+                <option value="all" {% if selected_tld == 'all' or not selected_tld %}selected{% endif %}>All Domains</option>
+                {% for tld in available_tlds %}
+                <option value="{{ tld }}" {% if selected_tld == tld %}selected{% endif %}>{{ tld }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
         <div>
             <button type="submit" class="btn btn-primary btn-sm">
                 <i class="fas fa-filter"></i> Apply Filters
@@ -61,7 +73,7 @@
             <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary btn-sm ml-2">
                 <i class="fas fa-server"></i> VM Findings
             </a>
-            <a href="{{ url_for('export.export_was_findings_txt') }}?severity={{ selected_severity }}&status={{ selected_status }}" 
+            <a href="{{ url_for('export.export_was_findings_txt') }}?severity={{ selected_severity }}&status={{ selected_status }}&tld={{ selected_tld }}" 
                class="btn btn-success btn-sm ml-2">
                 <i class="fas fa-file-alt"></i> Export All TXT
             </a>
@@ -86,7 +98,24 @@
 <div class="alert alert-success">
     <i class="fas fa-check-circle"></i> 
     <strong>Showing {{ was_findings|length }} WAS findings</strong> with current filters.
+    {% if selected_tld and selected_tld != 'all' %}
+    <br><small class="text-white"><i class="fas fa-filter"></i> Filtered to TLD: <strong>{{ selected_tld }}</strong></small>
+    {% endif %}
     <br><small class="text-muted"><i class="fas fa-file-alt"></i> Click "TXT" button to download individual tickets with GRC compliance mappings.</small>
+</div>
+{% endif %}
+
+<!-- TLD Distribution Summary -->
+{% if tld_summary and tld_summary|length > 0 %}
+<div class="alert alert-info">
+    <h6><i class="fas fa-chart-pie"></i> Domain Distribution Summary</h6>
+    <div class="row">
+        {% for tld, count in tld_summary.items() %}
+        <div class="col-md-2 col-sm-4 col-6 mb-2">
+            <strong>{{ tld }}:</strong> <span class="badge badge-primary">{{ count }}</span>
+        </div>
+        {% endfor %}
+    </div>
 </div>
 {% endif %}
 
@@ -97,6 +126,7 @@
             <tr>
                 <th><i class="fas fa-bug"></i> Vulnerability Name</th>
                 <th><i class="fas fa-link"></i> Target URL</th>
+                <th><i class="fas fa-globe-americas"></i> TLD</th>
                 <th><i class="fas fa-exclamation-triangle"></i> Severity</th>
                 <th><i class="fas fa-shield-alt"></i> OWASP Category</th>
                 <th><i class="fas fa-tachometer-alt"></i> CVSS Score</th>
@@ -121,6 +151,13 @@
                            style="word-break: break-all; font-size: 0.8em;">
                             {{ finding.target_url[:50] }}{% if finding.target_url|length > 50 %}...{% endif %}
                         </a>
+                    {% else %}
+                        <span class="text-muted">N/A</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if finding.tld %}
+                        <span class="badge badge-secondary">{{ finding.tld }}</span>
                     {% else %}
                         <span class="text-muted">N/A</span>
                     {% endif %}
@@ -171,7 +208,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="9" class="text-center">
+                <td colspan="10" class="text-center">
                     <i class="fas fa-search"></i> No WAS findings found.
                     <br><br>
                     <div class="alert alert-info d-inline-block text-left" style="max-width: 500px;">
@@ -194,14 +231,17 @@
 <div class="alert alert-secondary mt-4">
     <h6><i class="fas fa-info-circle"></i> WAS Integration Status</h6>
     <div class="row">
-        <div class="col-md-4">
+        <div class="col-md-3">
             <strong>WAS Findings in DB:</strong> {{ was_findings|length }}
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
+            <strong>Unique TLDs:</strong> {{ available_tlds|length if available_tlds else 0 }}
+        </div>
+        <div class="col-md-3">
             <strong>Feature Flag:</strong> 
             <span class="badge badge-success">Enabled</span>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <strong>Last Updated:</strong> During last data ingestion
         </div>
     </div>
