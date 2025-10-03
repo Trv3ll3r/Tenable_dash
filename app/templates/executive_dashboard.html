@@ -117,6 +117,46 @@
         color: white;
     }
     
+    .nist-spotlight {
+        background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
+        border: 3px solid #f39c12;
+        color: white;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+    }
+    
+    .nist-spotlight h3 {
+        color: white !important;
+        font-size: 1.5rem;
+        margin-bottom: 20px;
+    }
+    
+    .nist-metric {
+        text-align: center;
+        padding: 20px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 8px;
+        transition: all 0.3s;
+    }
+    
+    .nist-metric:hover {
+        background: rgba(255,255,255,0.15);
+        transform: translateY(-3px);
+    }
+    
+    .nist-metric h2 {
+        font-size: 2.5rem;
+        font-weight: 800;
+        margin-bottom: 5px;
+    }
+    
+    .nist-metric p {
+        color: #ecf0f1 !important;
+        font-weight: 600;
+        margin: 0;
+    }
+    
     .risk-gauge {
         width: 200px;
         height: 200px;
@@ -396,12 +436,54 @@
     </div>
 </div>
 
+<!-- NIST 800-53 Spotlight -->
+{% if data.grc_summary and 'NIST 800-53' in data.grc_summary %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="nist-spotlight">
+            <h3><i class="fas fa-shield-alt"></i> NIST 800-53 Compliance Spotlight</h3>
+            <div class="row mt-4">
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="nist-metric">
+                        <h2 style="color: white;">{{ data.grc_summary['NIST 800-53'].total_findings }}</h2>
+                        <p>Total Findings</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="nist-metric">
+                        <h2 style="color: #e74c3c;">{{ data.grc_summary['NIST 800-53'].critical }}</h2>
+                        <p>Critical Severity</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="nist-metric">
+                        <h2 style="color: #f39c12;">{{ data.grc_summary['NIST 800-53'].high }}</h2>
+                        <p>High Priority</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="nist-metric">
+                        <h2 style="color: #3498db;">{{ data.grc_summary['NIST 800-53'].requirements_count }}</h2>
+                        <p>Controls Affected</p>
+                    </div>
+                </div>
+            </div>
+            <div class="alert" style="background: rgba(255,255,255,0.2); border: 2px solid #f39c12; color: white; margin-top: 20px; margin-bottom: 0;">
+                <i class="fas fa-info-circle"></i> 
+                <strong>NIST 800-53 Impact:</strong> {{ data.grc_summary['NIST 800-53'].requirements_count }} security controls are currently affected by active vulnerabilities. 
+                Immediate remediation focus on {{ data.grc_summary['NIST 800-53'].critical }} critical and {{ data.grc_summary['NIST 800-53'].high }} high-severity findings is recommended.
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- GRC Compliance Summary -->
 {% if data.grc_summary %}
 <div class="row mb-4">
     <div class="col-12">
         <div class="chart-container">
-            <h3><i class="fas fa-gavel"></i> GRC Compliance Impact</h3>
+            <h3><i class="fas fa-gavel"></i> GRC Compliance Impact - All Frameworks</h3>
             <div class="row mt-3">
                 {% for framework, stats in data.grc_summary.items() %}
                 <div class="col-lg-6 mb-3">
@@ -499,6 +581,14 @@
                 <strong style="font-weight: 700;">{{ data.grc_stats.total_requirements }}</strong> specific requirements.
             </p>
             {% endif %}
+            {% if data.grc_summary and 'NIST 800-53' in data.grc_summary %}
+            <p style="color: #34495e; font-weight: 500;">
+                <strong style="font-weight: 700; color: #2c3e50;">NIST 800-53 Status:</strong> 
+                <strong style="font-weight: 700;">{{ data.grc_summary['NIST 800-53'].requirements_count }}</strong> NIST controls are affected, with
+                <strong class="text-danger">{{ data.grc_summary['NIST 800-53'].critical }}</strong> critical and
+                <strong class="text-warning">{{ data.grc_summary['NIST 800-53'].high }}</strong> high-severity findings requiring immediate remediation.
+            </p>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -586,6 +676,11 @@ new Chart(severityCtx, {
         }
     }
 });
+</script>
+
+{% endblock %}
+    }
+});
 
 // Cloud Distribution
 const cloudCtx = document.getElementById('cloudChart').getContext('2d');
@@ -640,11 +735,3 @@ new Chart(trendCtx, {
         plugins: {
             legend: { position: 'bottom' }
         },
-        scales: {
-            y: { beginAtZero: true }
-        }
-    }
-});
-</script>
-
-{% endblock %}
