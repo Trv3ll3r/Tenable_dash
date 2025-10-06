@@ -657,7 +657,7 @@ def was_findings():
         
         selected_severity = request.args.get('severity', 'all')
         selected_status = request.args.get('status', 'active')
-        selected_tld = request.args.get('tld', 'all')
+        selected_domain = request.args.get('domain', 'all')
         
         query = db.session.query(WASFinding)
         
@@ -688,33 +688,37 @@ def was_findings():
         
         was_findings_list = query.all()
         
-        # Extract TLDs from URLs and add to findings
-        tld_counter = Counter()
+        # Extract full domain/hostname from URLs and add to findings
+        domain_counter = Counter()
         for finding in was_findings_list:
             if finding.target_url:
                 try:
                     parsed_url = urlparse(finding.target_url)
-                    domain = parsed_url.netloc or parsed_url.path
-                    if '.' in domain:
-                        tld = '.' + domain.split('.')[-1]
-                        finding.tld = tld
-                        tld_counter[tld] += 1
+                    # Get the netloc (domain:port) or fallback to path
+                    domain = parsed_url.netloc or parsed_url.path.split('/')[0]
+                    # Remove port if present
+                    if ':' in domain:
+                        domain = domain.split(':')[0]
+                    
+                    if domain:
+                        finding.domain = domain
+                        domain_counter[domain] += 1
                     else:
-                        finding.tld = None
+                        finding.domain = None
                 except:
-                    finding.tld = None
+                    finding.domain = None
             else:
-                finding.tld = None
+                finding.domain = None
         
-        # Filter by TLD if selected
-        if selected_tld and selected_tld != 'all':
-            was_findings_list = [f for f in was_findings_list if f.tld == selected_tld]
+        # Filter by domain if selected
+        if selected_domain and selected_domain != 'all':
+            was_findings_list = [f for f in was_findings_list if f.domain == selected_domain]
         
-        # Get available TLDs sorted by count
-        available_tlds = [tld for tld, count in tld_counter.most_common()]
+        # Get available domains sorted by count
+        available_domains = [domain for domain, count in domain_counter.most_common()]
         
-        # Create TLD summary
-        tld_summary = dict(tld_counter.most_common(20))  # Top 20 TLDs
+        # Create domain summary (top 20 domains)
+        domain_summary = dict(domain_counter.most_common(20))
         
         was_specific_grc_summary = get_grc_summary_for_findings(was_findings_list)
         
@@ -723,9 +727,9 @@ def was_findings():
                              was_specific_grc_summary=was_specific_grc_summary,
                              selected_severity=selected_severity,
                              selected_status=selected_status,
-                             selected_tld=selected_tld,
-                             available_tlds=available_tlds,
-                             tld_summary=tld_summary)
+                             selected_domain=selected_domain,
+                             available_domains=available_domains,
+                             domain_summary=domain_summary)
         
     except Exception as e:
         current_app.logger.error(f"Error in was_findings: {e}")
