@@ -11,6 +11,7 @@ import os
 from ..database import db
 from ..models import VulnerabilityFinding, AttackPathFinding, WASFinding, PluginComplianceMapping, ComplianceRequirement
 
+# Create blueprint
 main_bp = Blueprint('main', __name__)
 
 
@@ -51,63 +52,6 @@ def get_grc_summary_for_findings(findings):
         }
     
     return result
-
-
-def get_nist_specific_summary(findings):
-    """Generate NIST-specific compliance summary"""
-    nist_summary = {
-        'total_findings': 0,
-        'critical': 0,
-        'high': 0,
-        'medium': 0,
-        'low': 0,
-        'requirements': {},
-        'top_requirements': []
-    }
-    
-    for finding in findings:
-        if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
-            for mapping in finding.plugin_compliance_mappings:
-                if mapping.compliance_requirement and mapping.compliance_requirement.framework == 'NIST 800-53':
-                    req_id = mapping.compliance_requirement.requirement_id
-                    
-                    if req_id not in nist_summary['requirements']:
-                        nist_summary['requirements'][req_id] = {
-                            'requirement_id': req_id,
-                            'description': mapping.compliance_requirement.description,
-                            'total_findings': 0,
-                            'critical': 0,
-                            'high': 0,
-                            'medium': 0,
-                            'low': 0,
-                            'affected_plugins': set()
-                        }
-                    
-                    nist_summary['total_findings'] += 1
-                    nist_summary['requirements'][req_id]['total_findings'] += 1
-                    nist_summary['requirements'][req_id]['affected_plugins'].add(finding.plugin_id)
-                    
-                    severity = (finding.severity or 'unknown').lower()
-                    if severity in ['critical', 'high', 'medium', 'low']:
-                        nist_summary[severity] += 1
-                        nist_summary['requirements'][req_id][severity] += 1
-    
-    nist_summary['top_requirements'] = sorted(
-        [
-            {
-                **data,
-                'affected_plugins_count': len(data['affected_plugins']),
-                'affected_plugins': list(data['affected_plugins'])
-            }
-            for data in nist_summary['requirements'].values()
-        ],
-        key=lambda x: x['total_findings'],
-        reverse=True
-    )[:10]
-    
-    nist_summary['requirements_count'] = len(nist_summary['requirements'])
-    
-    return nist_summary
 
 
 def get_dashboard_metrics():
@@ -485,7 +429,6 @@ def grouped_findings():
         all_findings = query.all()
         
         grouped_grc_summary = get_grc_summary_for_findings(all_findings)
-        nist_summary = get_nist_specific_summary(all_findings)
         
         grouped_findings_dict = {}
         for finding in all_findings:
@@ -494,8 +437,6 @@ def grouped_findings():
             if plugin_key not in grouped_findings_dict:
                 grc_mappings = []
                 grc_frameworks = set()
-                nist_mappings = []
-                
                 if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
                     for mapping in finding.plugin_compliance_mappings:
                         if mapping.compliance_requirement:
@@ -506,12 +447,6 @@ def grouped_findings():
                                 'requirement_id': mapping.compliance_requirement.requirement_id,
                                 'description': mapping.compliance_requirement.description
                             })
-                            
-                            if framework == 'NIST 800-53':
-                                nist_mappings.append({
-                                    'requirement_id': mapping.compliance_requirement.requirement_id,
-                                    'description': mapping.compliance_requirement.description
-                                })
                 
                 grouped_findings_dict[plugin_key] = {
                     'plugin_id': finding.plugin_id,
@@ -523,8 +458,6 @@ def grouped_findings():
                     'solution': finding.solution,
                     'grc_mappings': grc_mappings,
                     'grc_frameworks': list(grc_frameworks),
-                    'nist_mappings': nist_mappings,
-                    'has_nist': len(nist_mappings) > 0,
                     'affected_assets': [],
                     'asset_count': 0,
                     'first_found': finding.first_found,
@@ -559,7 +492,6 @@ def grouped_findings():
         return render_template('grouped_findings.html',
                              grouped_findings=grouped_list,
                              grouped_grc_summary=grouped_grc_summary,
-                             nist_summary=nist_summary,
                              selected_severity=selected_severity,
                              selected_state=selected_state,
                              selected_time_period=selected_time_period,
