@@ -55,13 +55,13 @@
         </div>
 
         <div class="form-group mr-3">
-            <label for="tld" class="mr-2 text-white">
-                <i class="fas fa-globe-americas"></i> TLD:
+            <label for="domain" class="mr-2 text-white">
+                <i class="fas fa-globe-americas"></i> Domain:
             </label>
-            <select name="tld" id="tld" class="form-control form-control-sm">
-                <option value="all" {% if selected_tld == 'all' or not selected_tld %}selected{% endif %}>All Domains</option>
-                {% for tld in available_tlds %}
-                <option value="{{ tld }}" {% if selected_tld == tld %}selected{% endif %}>{{ tld }}</option>
+            <select name="domain" id="domain" class="form-control form-control-sm" style="max-width: 300px;">
+                <option value="all" {% if selected_domain == 'all' or not selected_domain %}selected{% endif %}>All Domains</option>
+                {% for domain in available_domains %}
+                <option value="{{ domain }}" {% if selected_domain == domain %}selected{% endif %}>{{ domain }}</option>
                 {% endfor %}
             </select>
         </div>
