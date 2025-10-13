@@ -1,432 +1,542 @@
-"""
-Tenable API Client - Clean implementation with pytenable 1.8.4 support
-Supports both Tenable.io and Ermetic endpoints
-Fixed to use Tenable.io for vulnerability/WAS data and Ermetic for cloud data
-"""
-
-import os
-import requests
-from datetime import datetime, timedelta, timezone
-from tenable.io import TenableIO
-from flask import current_app
-
-
-class TenableClient:
-    """Clean Tenable API client wrapper with Ermetic support"""
-    
-    def __init__(self, access_key=None, secret_key=None, ermetic_url=None, ermetic_token=None):
-        """Initialize Tenable client with credentials"""
-        # Standard Tenable.io credentials
-        self.access_key = access_key or current_app.config.get('TENABLE_ACCESS_KEY') or os.getenv('TENABLE_ACCESS_KEY')
-        self.secret_key = secret_key or current_app.config.get('TENABLE_SECRET_KEY') or os.getenv('TENABLE_SECRET_KEY')
-        
-        # Ermetic API credentials  
-        self.ermetic_url = ermetic_url or current_app.config.get('ERMETIC_API_URL') or os.getenv('ERMETIC_API_URL')
-        self.ermetic_token = ermetic_token or current_app.config.get('ERMETIC_API_TOKEN') or os.getenv('ERMETIC_API_TOKEN')
-        
-        # Determine which APIs are available
-        self.has_ermetic = bool(self.ermetic_url and self.ermetic_token)
-        self.has_tenable = bool(self.access_key and self.secret_key)
-        
-        if self.has_ermetic and self.has_tenable:
-            current_app.logger.info("Both Tenable.io and Ermetic APIs available - using hybrid mode")
-            print("🔗 Hybrid mode: Tenable.io for vulnerabilities, Ermetic for cloud")
-        elif self.has_tenable:
-            current_app.logger.info("Using standard Tenable.io API only")
-            print("🔗 Using standard Tenable.io API")
-        elif self.has_ermetic:
-            current_app.logger.warning("Only Ermetic API available - limited functionality")
-            print("⚠️ Only Ermetic API available - vulnerability data will be limited")
-        else:
-            raise ValueError("Either Tenable.io credentials OR Ermetic API credentials required. Check your .env file.")
-        
-        self._tenable_client = None
-        self._ermetic_client = None
-        self._validated = False
-    
-    @property
-    def tenable_client(self):
-        """Get Tenable.io client instance with lazy initialization"""
-        if self._tenable_client is None and self.has_tenable:
-            current_app.logger.info("Creating Tenable.io client...")
-            self._tenable_client = TenableIO(self.access_key, self.secret_key)
-        return self._tenable_client
-    
-    @property
-    def ermetic_client(self):
-        """Get Ermetic client instance with lazy initialization"""
-        if self._ermetic_client is None and self.has_ermetic:
-            current_app.logger.info("Creating Ermetic API client...")
-            self._ermetic_client = self._create_ermetic_client()
-        return self._ermetic_client
-    
-    def _create_ermetic_client(self):
-        """Create custom Ermetic API client"""
-        class ErmeticClient:
-            def __init__(self, url, token):
-                self.url = url.rstrip('/')
-                self.token = token
-                self.headers = {
-                    'Authorization': f'Bearer {token}',
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'TenableDashboard/1.0 (pytenable/1.8.4)'
-                }
-                self.session = requests.Session()
-                self.session.headers.update(self.headers)
-            
-            def test_connection(self):
-                """Test Ermetic API connection"""
-                try:
-                    # Try multiple possible health check endpoints
-                    health_endpoints = [
-                        '/api/v1/health',
-                        '/api/health', 
-                        '/health',
-                        '/api/v1/status',
-                        '/status'
-                    ]
-                    
-                    for endpoint in health_endpoints:
-                        try:
-                            response = self.session.get(f'{self.url}{endpoint}', timeout=10)
-                            if response.status_code == 200:
-                                current_app.logger.info(f"Ermetic health check successful via {endpoint}")
-                                return True
-                        except requests.exceptions.RequestException:
-                            continue
-                    
-                    # If health checks fail, try a simple API call
-                    response = self.session.get(f'{self.url}/api/v1', timeout=10)
-                    return response.status_code in [200, 401, 403]  # 401/403 means API is responding
-                    
-                except Exception as e:
-                    current_app.logger.error(f"Ermetic connection test failed: {e}")
-                    return False
-            
-            def get_cloud_findings(self, since_date=None, limit=None):
-                """
-                Fetch cloud security findings from Ermetic
-                This would need to be implemented based on actual Ermetic API documentation
-                """
-                current_app.logger.info("Fetching cloud security findings from Ermetic...")
-                
-                try:
-                    # This is a placeholder implementation
-                    # Replace with actual Ermetic API calls for cloud security data
-                    endpoint = '/api/v1/cloud/findings'  # Example endpoint
-                    params = {}
-                    
-                    if since_date:
-                        params['since'] = since_date.isoformat()
-                    if limit:
-                        params['limit'] = limit
-                    
-                    response = self.session.get(f'{self.url}{endpoint}', params=params, timeout=30)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        # Process the response according to Ermetic API format
-                        findings = data.get('findings', [])
-                        current_app.logger.info(f"Retrieved {len(findings)} cloud findings from Ermetic")
-                        return findings
-                    else:
-                        current_app.logger.warning(f"Ermetic API returned status {response.status_code}")
-                        return []
-                        
-                except Exception as e:
-                    current_app.logger.error(f"Error fetching Ermetic cloud findings: {e}")
-                    return []
-        
-        return ErmeticClient(self.ermetic_url, self.ermetic_token)
-    
-    def validate_connection(self):
-        """Test the API connections"""
-        if self._validated:
-            return True
-        
-        success = False
-        
-        # Test Tenable.io connection if available
-        if self.has_tenable:
-            try:
-                current_app.logger.info("Testing Tenable.io connection...")
-                session_info = self.tenable_client.session.details()
-                user_name = session_info.get('name', 'Unknown')
-                user_email = session_info.get('email', 'Unknown')
-                
-                current_app.logger.info(f"✅ Connected to Tenable.io as: {user_name} ({user_email})")
-                print(f"✅ Tenable.io API connection successful - User: {user_name}")
-                success = True
-                
-            except Exception as e:
-                current_app.logger.error(f"Tenable.io connection failed: {e}")
-                print(f"❌ Tenable.io connection failed: {e}")
-        
-        # Test Ermetic connection if available
-        if self.has_ermetic:
-            try:
-                current_app.logger.info("Testing Ermetic connection...")
-                if self.ermetic_client.test_connection():
-                    current_app.logger.info("✅ Connected to Ermetic API")
-                    print("✅ Ermetic API connection successful")
-                    success = True
-                else:
-                    current_app.logger.warning("Ermetic API connection test failed")
-                    print("⚠️ Ermetic API connection test failed")
-                    
-            except Exception as e:
-                current_app.logger.error(f"Ermetic connection test error: {e}")
-                print(f"⚠️ Ermetic connection test error: {e}")
-        
-        if not success:
-            raise Exception("No API connections successful")
-        
-        self._validated = True
-        return True
-    
-    def fetch_vulnerability_findings(self, days_since=30, limit=None):
-        """
-        Fetch vulnerability findings from Tenable.io (ALWAYS use Tenable for vulnerabilities)
-        
-        Args:
-            days_since: Number of days to look back
-            limit: Maximum number of findings to return (for testing)
-        
-        Yields:
-            dict: Vulnerability finding data
-        """
-        if not self.has_tenable:
-            current_app.logger.error("Tenable.io credentials required for vulnerability findings")
-            raise ValueError("Tenable.io credentials required for vulnerability findings")
-        
-        # Always validate Tenable.io connection for vulnerability data
-        try:
-            session_info = self.tenable_client.session.details()
-            current_app.logger.info(f"Using Tenable.io for vulnerability data - User: {session_info.get('name', 'Unknown')}")
-        except Exception as e:
-            current_app.logger.error(f"Tenable.io connection failed: {e}")
-            raise
-        
-        # Calculate date range
-        past_date = datetime.now(timezone.utc) - timedelta(days=days_since)
-        since_timestamp = int(past_date.timestamp())
-        
-        current_app.logger.info(f"Fetching vulnerability findings since: {past_date.isoformat()}")
-        print(f"📥 Fetching vulnerability findings since: {past_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        
-        count = 0
-        try:
-            # ALWAYS use Tenable.io for vulnerability data
-            current_app.logger.info("Using Tenable.io API for vulnerability data")
-            print("🔗 Using Tenable.io API endpoint")
-            
-            export_params = {
-                'since': since_timestamp,
-                'state': ['open', 'reopened'],
-                'severity': ['critical', 'high', 'medium', 'low']
-            }
-            
-            for finding_data in self.tenable_client.exports.vulns(**export_params):
-                yield finding_data
-                count += 1
-                
-                if count % 1000 == 0:
-                    current_app.logger.info(f"Fetched {count} vulnerability findings...")
-                    print(f"📊 Fetched {count} vulnerability findings...")
-                
-                if limit and count >= limit:
-                    current_app.logger.info(f"Reached limit of {limit} findings")
-                    break
-                        
-        except Exception as e:
-            current_app.logger.error(f"Error fetching vulnerability findings: {e}")
-            raise
-        
-        current_app.logger.info(f"Total vulnerability findings retrieved: {count}")
-        print(f"✅ Total vulnerability findings retrieved: {count}")
-    
-    def fetch_was_findings(self, days_since=30):
-        """
-        Fetch WAS findings from Tenable.io (ALWAYS use Tenable for WAS)
-        
-        Args:
-            days_since: Number of days to look back
-            
-        Yields:
-            dict: WAS finding data
-        """
-        from config import FeatureFlags
-        
-        if not FeatureFlags.ENABLE_WAS_FINDINGS:
-            current_app.logger.info("WAS findings disabled by feature flag")
-            return
-        
-        if not self.has_tenable:
-            current_app.logger.warning("Tenable.io credentials required for WAS findings")
-            return
-        
-        # Always use Tenable.io for WAS data
-        past_date = datetime.now(timezone.utc) - timedelta(days=days_since)
-        since_date_str = past_date.strftime('%Y/%m/%d')
-        
-        current_app.logger.info(f"Fetching WAS findings since: {since_date_str}")
-        print(f"🌐 Fetching WAS findings since: {since_date_str}")
-        
-        count = 0
-        try:
-            was_findings = self.tenable_client.was.export(
-                and_filter=[
-                    ("scans_started_at", "gte", since_date_str),
-                    ("scans_status", "eq", "completed")
-                ]
-            )
-            
-            for finding_data in was_findings:
-                finding_detail = finding_data.get('finding', {})
-                risk_factor = finding_detail.get('risk_factor', '').lower()
-                
-                if risk_factor == 'info':
-                    continue
-                
-                yield finding_data
-                count += 1
-                
-                if count % 100 == 0:
-                    current_app.logger.info(f"Fetched {count} WAS findings...")
-                    print(f"📊 Fetched {count} WAS findings...")
-                    
-        except Exception as e:
-            current_app.logger.warning(f"WAS findings not available: {e}")
-            print("ℹ️  WAS findings not available - this is normal if you don't have WAS licensing")
-            return
-        
-        current_app.logger.info(f"Total WAS findings retrieved: {count}")
-        print(f"✅ Total WAS findings retrieved: {count}")
-    
-    def fetch_attack_path_candidates(self):
-        """
-        Generate attack paths from Tenable.io assets (ALWAYS use Tenable for attack paths)
-        """
-        from config import FeatureFlags
-        
-        if not FeatureFlags.ENABLE_ATTACK_PATH_ANALYSIS:
-            current_app.logger.info("Attack path analysis disabled by feature flag")
-            return
-        
-        if not self.has_tenable:
-            current_app.logger.warning("Tenable.io credentials required for attack path generation")
-            return
-        
-        current_app.logger.info("Generating attack path candidates from high-risk assets...")
-        print("🎯 Generating attack path candidates...")
-        
-        count = 0
-        try:
-            assets = list(self.tenable_client.exports.assets())
-            
-            for asset in assets:
-                critical_count = asset.get('critical_count', 0)
-                high_count = asset.get('high_count', 0)
-                
-                if critical_count > 2 or (critical_count > 0 and high_count > 5):
-                    asset_name = asset.get('hostname') or asset.get('ipv4') or f"Asset-{asset.get('id')}"
-                    
-                    attack_path_data = {
-                        'id': f"synthetic_path_{asset.get('id')}",
-                        'name': f"High Risk Path: {asset_name}",
-                        'description': f"Asset with {critical_count} critical and {high_count} high severity vulnerabilities",
-                        'risk_score': min(10.0, 5.0 + (critical_count * 1.5) + (high_count * 0.3)),
-                        'path_length': critical_count + high_count,
-                        'assets': [asset.get('id')],
-                        'critical_assets': [asset.get('id')] if critical_count > 2 else [],
-                        'status': 'ACTIVE',
-                        'created_at': datetime.now(timezone.utc).isoformat(),
-                        'updated_at': datetime.now(timezone.utc).isoformat()
-                    }
-                    
-                    yield attack_path_data
-                    count += 1
-                    
-                    if count >= 20:
-                        break
-                        
-        except Exception as e:
-            current_app.logger.error(f"Error generating attack path candidates: {e}")
-            raise
-        
-        current_app.logger.info(f"Generated {count} attack path candidates")
-        print(f"✅ Generated {count} attack path candidates")
-    
-    def fetch_cloud_findings(self, days_since=30):
-        """
-        Fetch cloud security findings from Ermetic (if available)
-        
-        Args:
-            days_since: Number of days to look back
-            
-        Yields:
-            dict: Cloud security finding data
-        """
-        from config import FeatureFlags
-        
-        if not FeatureFlags.ENABLE_CLOUD_METADATA:
-            current_app.logger.info("Cloud findings disabled by feature flag")
-            return
-        
-        if not self.has_ermetic:
-            current_app.logger.info("Ermetic credentials not available - skipping cloud findings")
-            print("ℹ️  Ermetic API not configured - skipping cloud-specific findings")
-            return
-        
-        past_date = datetime.now(timezone.utc) - timedelta(days=days_since)
-        
-        current_app.logger.info(f"Fetching cloud findings from Ermetic since: {past_date.isoformat()}")
-        print(f"☁️ Fetching cloud findings since: {past_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        
-        count = 0
-        try:
-            # Use Ermetic client for cloud-specific data
-            cloud_findings = self.ermetic_client.get_cloud_findings(since_date=past_date, limit=1000)
-            
-            for finding_data in cloud_findings:
-                yield finding_data
-                count += 1
-                
-                if count % 100 == 0:
-                    current_app.logger.info(f"Fetched {count} cloud findings...")
-                    print(f"📊 Fetched {count} cloud findings...")
-                    
-        except Exception as e:
-            current_app.logger.error(f"Error fetching cloud findings: {e}")
-            print(f"⚠️ Error fetching cloud findings: {e}")
-            return
-        
-        current_app.logger.info(f"Total cloud findings retrieved: {count}")
-        print(f"✅ Total cloud findings retrieved: {count}")
-    
-    def fetch_container_findings(self):
-        """
-        Fetch container security findings (placeholder)
-        Requires separate Container Security API key
-        """
-        from config import FeatureFlags
-        
-        if not FeatureFlags.ENABLE_CONTAINER_SECURITY:
-            current_app.logger.info("Container security disabled by feature flag")
-            return
-        
-        cs_api_key = current_app.config.get('TENABLE_CS_API_KEY')
-        if not cs_api_key:
-            current_app.logger.info("Container Security API key not configured")
-            print("ℹ️  Container Security API key not found - skipping container findings")
-            return
-        
-        current_app.logger.info("Container security integration would be implemented here")
-        print("🐳 Container security integration not yet implemented")
-        return
-        yield  # Make this a generator
-
-
-def get_tenable_client():
-    """Get a configured Tenable client instance"""
-    return TenableClient()
+[
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "6.2.2",
+      "description": "Establish and maintain a software vulnerability management program to identify and address vulnerabilities"
+    },
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "6.3.1",
+      "description": "Security vulnerabilities are identified and addressed"
+    },
+    "plugin_ids": [35453, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "4.2.1",
+      "description": "Strong cryptography and security protocols are implemented to safeguard PAN during transmission"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "2.2.2",
+      "description": "Vendor default accounts are managed"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "2.2.4",
+      "description": "System security parameters are configured to prevent misuse"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "6.4.3",
+      "description": "Software engineering techniques or other methods prevent or mitigate common software attacks"
+    },
+    "plugin_ids": [102082, 111071, 144327, 150162, 154988]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "8.3.1",
+      "description": "Multi-factor authentication (MFA) is implemented for all access"
+    },
+    "plugin_ids": [35453, 97085, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "1.4.2",
+      "description": "Network security controls are implemented"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "11.3.1",
+      "description": "Internal vulnerability scans are performed"
+    },
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "11.3.2",
+      "description": "External vulnerability scans are performed"
+    },
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "12.3.1",
+      "description": "Security policies and procedures are documented and maintained"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "3.5.1",
+      "description": "Primary account numbers (PAN) are secured wherever stored"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882]
+  },
+  {
+    "requirement": {
+      "framework": "PCI DSS",
+      "version": "4.0",
+      "requirement_id": "10.2.1",
+      "description": "Audit logs are implemented to support detection of anomalies and suspicious activity"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.1",
+      "description": "The entity implements logical access security measures to protect against threats from sources outside its system boundaries"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.6",
+      "description": "The entity implements logical access security measures to protect against threats from sources within its system boundaries"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.7",
+      "description": "The entity restricts the transmission, movement, and removal of information to authorized internal and external users"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC7.1",
+      "description": "The entity uses detection and monitoring procedures to identify anomalies"
+    },
+    "plugin_ids": [35453, 63155, 63420, 87882, 97085, 102082, 111071, 144327, 150162]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC7.2",
+      "description": "The entity monitors system components and operation of those components"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC8.1",
+      "description": "The entity authorizes, designs, develops or acquires, configures, documents, tests, approves changes to infrastructure, data, software"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 150162, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.8",
+      "description": "The entity implements controls to prevent or detect and act upon the introduction of unauthorized software"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC3.4",
+      "description": "The entity implements policies and procedures to protect information assets"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC5.1",
+      "description": "Control activities are designed and implemented to prevent or detect risks"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.2",
+      "description": "Prior to issuing system credentials, the entity registers and authorizes new users"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "CC6.3",
+      "description": "The entity authorizes, modifies, or removes access based on roles and responsibilities"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "A1.1",
+      "description": "The entity obtains or generates and uses encryption keys to protect data"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "SOC 2",
+      "version": "2017",
+      "requirement_id": "A1.2",
+      "description": "The entity authorizes, modifies, or removes access to data and system resources"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 32",
+      "description": "Security of processing - implement appropriate technical and organizational measures to ensure a level of security"
+    },
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 111071, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 32(1)(a)",
+      "description": "Pseudonymisation and encryption of personal data"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 32(1)(b)",
+      "description": "Ability to ensure ongoing confidentiality, integrity, availability and resilience of processing systems"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 150162, 154988, 156103, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 32(1)(d)",
+      "description": "Process for regularly testing, assessing and evaluating the effectiveness of technical and organizational measures"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 25",
+      "description": "Data protection by design and by default"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 5(1)(f)",
+      "description": "Integrity and confidentiality - processed in a manner that ensures appropriate security"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 33",
+      "description": "Notification of a personal data breach to the supervisory authority"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "GDPR",
+      "version": "2016/679",
+      "requirement_id": "Article 35",
+      "description": "Data protection impact assessment"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "RA-5",
+      "description": "Vulnerability Monitoring and Scanning - Monitor and scan for vulnerabilities in the system and applications"
+    },
+    "plugin_ids": [35453, 40362, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 123459, 123460, 123461, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SI-2",
+      "description": "Flaw Remediation - Identify, report, and correct system flaws"
+    },
+    "plugin_ids": [35453, 63155, 63420, 64784, 65057, 87882, 97085, 102082, 111071, 135718, 137663, 144327, 150162, 154988, 156103, 156327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SC-8",
+      "description": "Transmission Confidentiality and Integrity - Protect the confidentiality and integrity of transmitted information"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SC-13",
+      "description": "Cryptographic Protection - Implement FIPS-validated or NSA-approved cryptography"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "IA-5",
+      "description": "Authenticator Management - Manage system authenticators"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CM-7",
+      "description": "Least Functionality - Configure systems to provide only essential capabilities"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CM-6",
+      "description": "Configuration Settings - Establish and maintain configuration settings for systems"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SI-10",
+      "description": "Information Input Validation - Check the validity of information inputs"
+    },
+    "plugin_ids": [102082, 111071, 144327, 150162, 154988]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "IA-2(1)",
+      "description": "Multi-Factor Authentication - Implement multi-factor authentication for network access"
+    },
+    "plugin_ids": [35453, 97085, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SC-7",
+      "description": "Boundary Protection - Monitor and control communications at external system boundaries"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "AC-3",
+      "description": "Access Enforcement - Enforce approved authorizations for logical access"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "AC-6",
+      "description": "Least Privilege - Employ the principle of least privilege"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SC-28",
+      "description": "Protection of Information at Rest - Protect the confidentiality and integrity of information at rest"
+    },
+    "plugin_ids": [63155, 63420, 64784, 65057, 87882, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "AU-6",
+      "description": "Audit Record Review, Analysis, and Reporting - Review and analyze system audit records"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 150162]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SI-4",
+      "description": "System Monitoring - Monitor the system to detect attacks and indicators of potential attacks"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CM-3",
+      "description": "Configuration Change Control - Authorize, document, and control changes to the system"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 150162, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CM-8",
+      "description": "System Component Inventory - Develop and maintain an inventory of system components"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SI-3",
+      "description": "Malicious Code Protection - Implement malicious code protection mechanisms"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CA-2",
+      "description": "Control Assessments - Develop and implement a control assessment plan"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "CA-7",
+      "description": "Continuous Monitoring - Develop and implement a continuous monitoring strategy"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 144327, 150162]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "PL-8",
+      "description": "Security and Privacy Architectures - Develop security and privacy architectures"
+    },
+    "plugin_ids": [35453, 97085, 123459, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "SA-11",
+      "description": "Developer Testing and Evaluation - Require developers to create and execute test plans"
+    },
+    "plugin_ids": [102082, 111071, 144327, 150162, 154988, 156103, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "IR-6",
+      "description": "Incident Reporting - Require personnel to report suspected incidents"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "RA-3",
+      "description": "Risk Assessment - Conduct risk assessments of the system"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085, 102082, 111071, 172178]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "AC-2",
+      "description": "Account Management - Manage system accounts"
+    },
+    "plugin_ids": [35453, 40362, 97085, 123459, 123460, 123461, 135718]
+  },
+  {
+    "requirement": {
+      "framework": "NIST 800-53",
+      "version": "Rev 5",
+      "requirement_id": "AU-2",
+      "description": "Event Logging - Identify the types of events that the system is capable of logging"
+    },
+    "plugin_ids": [35453, 63155, 87882, 97085]
+  }
+]
