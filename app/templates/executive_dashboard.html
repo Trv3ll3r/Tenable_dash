@@ -41,6 +41,7 @@
         font-weight: bold;
         color: #2c3e50;
         margin: 10px 0;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.1);
     }
     
     .metric-card.critical .metric-value { color: #c0392b; }
@@ -287,8 +288,19 @@
         font-weight: 800;
     }
     
-    .metric-value {
-        text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    .nist-control-card {
+        background: white;
+        border-left: 4px solid #1565c0;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 6px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        transition: all 0.3s;
+    }
+    
+    .nist-control-card:hover {
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        transform: translateX(3px);
     }
 </style>
 
@@ -473,6 +485,83 @@
                 <strong>NIST 800-53 Impact:</strong> {{ data.grc_summary['NIST 800-53'].requirements_count }} security controls are currently affected by active vulnerabilities. 
                 Immediate remediation focus on {{ data.grc_summary['NIST 800-53'].critical }} critical and {{ data.grc_summary['NIST 800-53'].high }} high-severity findings is recommended.
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced NIST Control Details Table -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-list-alt"></i> NIST 800-53 Top Affected Controls</h3>
+            <p style="color: #7f8c8d; margin-bottom: 20px;">
+                Vulnerabilities mapped to specific NIST 800-53 Rev 5 security controls - prioritize remediation by control impact.
+            </p>
+            
+            <!-- Export Buttons -->
+            <div style="margin-bottom: 20px;">
+                <a href="{{ url_for('export.export_nist_focused_csv') }}" class="btn btn-primary">
+                    <i class="fas fa-file-csv"></i> Export NIST CSV Report
+                </a>
+                <a href="{{ url_for('export.export_grouped_findings_csv') }}" class="btn btn-secondary ml-2">
+                    <i class="fas fa-table"></i> Export All Findings with NIST
+                </a>
+            </div>
+            
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th width="15%">Control ID</th>
+                        <th width="45%">Control Description</th>
+                        <th width="10%">Total</th>
+                        <th width="10%">Critical</th>
+                        <th width="10%">High</th>
+                        <th width="10%">Assets</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if data.nist_controls %}
+                        {% for control in data.nist_controls[:15] %}
+                        <tr>
+                            <td><strong style="color: #0d47a1; font-size: 1.05rem;">{{ control.control_id }}</strong></td>
+                            <td style="color: #34495e; font-size: 0.9rem;">
+                                {{ control.description[:80] + '...' if control.description and control.description|length > 80 else control.description or 'No description available' }}
+                            </td>
+                            <td><strong>{{ control.total_findings }}</strong></td>
+                            <td>
+                                {% if control.critical > 0 %}
+                                <span class="badge badge-critical">{{ control.critical }}</span>
+                                {% else %}
+                                <span style="color: #95a5a6;">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if control.high > 0 %}
+                                <span class="badge badge-high">{{ control.high }}</span>
+                                {% else %}
+                                <span style="color: #95a5a6;">-</span>
+                                {% endif %}
+                            </td>
+                            <td><strong>{{ control.affected_assets }}</strong></td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted">
+                                <em>No NIST control data available. Ensure GRC mappings are loaded.</em>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+            
+            {% if data.nist_controls and data.nist_controls|length > 15 %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i> 
+                Showing top 15 controls. <strong>{{ data.nist_controls|length - 15 }}</strong> additional controls are affected. 
+                Export the full NIST CSV report for complete details.
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -676,11 +765,6 @@ new Chart(severityCtx, {
         }
     }
 });
-</script>
-
-{% endblock %}
-    }
-});
 
 // Cloud Distribution
 const cloudCtx = document.getElementById('cloudChart').getContext('2d');
@@ -735,3 +819,11 @@ new Chart(trendCtx, {
         plugins: {
             legend: { position: 'bottom' }
         },
+        scales: {
+            y: { beginAtZero: true }
+        }
+    }
+});
+</script>
+
+{% endblock %}
