@@ -1,5 +1,6 @@
 """
 Data Processing Module - Clean data transformation and database operations
+Updated to include CloudFindingProcessor for Ermetic data
 """
 
 import json
@@ -13,6 +14,7 @@ from app.models import (
     AttackPathFinding, 
     WASFinding, 
     ContainerSecurityFinding,
+    CloudFinding,  # Add this import
     ComplianceRequirement,
     PluginComplianceMapping
 )
@@ -355,3 +357,194 @@ class WASProcessor:
             score = cvss_data.get('base_score')
             return str(score) if score is not None else None
         return None
+
+
+class CloudFindingProcessor:
+    """Process cloud security findings from Ermetic"""
+    
+    @staticmethod
+    def process_finding(finding_data):
+        """
+        Process and save a cloud security finding from Ermetic
+        
+        Args:
+            finding_data: Raw cloud finding data from Ermetic API
+            
+        Returns:
+            bool: True if saved successfully, False otherwise
+        """
+        try:
+            # Extract finding ID - adjust field names based on actual Ermetic API response
+            finding_id = (
+                finding_data.get('id') or 
+                finding_data.get('finding_id') or 
+                finding_data.get('alertId') or
+                finding_data.get('riskId')
+            )
+            
+            if not finding_id:
+                current_app.logger.warning("Cloud finding missing ID, skipping")
+                current_app.logger.debug(f"Finding data keys: {list(finding_data.keys())}")
+                return False
+            
+            # Convert to string for consistency
+            finding_id = str(finding_id)
+            
+            # Check if finding already exists
+            existing = CloudFinding.query.filter_by(finding_id=finding_id).first()
+            
+            if existing:
+                # Update existing finding
+                CloudFindingProcessor._update_finding(existing, finding_data)
+                current_app.logger.debug(f"Updated cloud finding: {finding_id}")
+            else:
+                # Create new finding
+                new_finding = CloudFindingProcessor._create_finding(finding_id, finding_data)
+                db.session.add(new_finding)
+                current_app.logger.debug(f"Created new cloud finding: {finding_id}")
+            
+            db.session.commit()
+            return True
+            
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error processing cloud finding: {e}")
+            current_app.logger.debug(f"Finding data: {finding_data}")
+            return False
+    
+    @staticmethod
+    def _create_finding(finding_id, data):
+        """Create a new CloudFinding object"""
+        return CloudFinding(
+            finding_id=finding_id,
+            title=CloudFindingProcessor._extract_field(data, ['title', 'name', 'alertTitle']),
+            description=CloudFindingProcessor._extract_field(data, ['description', 'desc', 'details']),
+            severity=CloudFindingProcessor._normalize_severity(
+                CloudFindingProcessor._extract_field(data, ['severity', 'risk', 'priority'])
+            ),
+            status=CloudFindingProcessor._normalize_status(
+                CloudFindingProcessor._extract_field(data, ['status', 'state'])
+            ),
+            cloud_provider=CloudFindingProcessor._normalize_provider(
+                CloudFindingProcessor._extract_field(data, ['cloud_provider', 'provider', 'cloudProvider'])
+            ),
+            resource_type=CloudFindingProcessor._extract_field(data, ['resource_type', 'resourceType', 'assetType']),
+            resource_id=CloudFindingProcessor._extract_field(data, ['resource_id', 'resourceId', 'assetId']),
+            region=CloudFindingProcessor._extract_field(data, ['region', 'location']),
+            account_id=CloudFindingProcessor._extract_field(data, ['account_id', 'accountId', 'subscriptionId']),
+            risk_score=CloudFindingProcessor._extract_numeric(data, ['risk_score', 'riskScore', 'score']),
+            category=CloudFindingProcessor._extract_field(data, ['category', 'type', 'findingType']),
+            remediation=CloudFindingProcessor._extract_field(data, ['remediation', 'solution', 'recommendation']),
+            first_detected_at=safe_timestamp_to_datetime(
+                CloudFindingProcessor._extract_field(data, ['first_detected', 'firstDetected', 'createdAt', 'created'])
+            ),
+            last_detected_at=safe_timestamp_to_datetime(
+                CloudFindingProcessor._extract_field(data, ['last_detected', 'lastDetected', 'updatedAt', 'updated'])
+            ),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            raw_data=str(data)  # Store full response for debugging
+        )
+    
+    @staticmethod
+    def _update_finding(finding, data):
+        """Update an existing CloudFinding object"""
+        finding.title = CloudFindingProcessor._extract_field(data, ['title', 'name', 'alertTitle']) or finding.title
+        finding.description = CloudFindingProcessor._extract_field(data, ['description', 'desc', 'details']) or finding.description
+        finding.severity = CloudFindingProcessor._normalize_severity(
+            CloudFindingProcessor._extract_field(data, ['severity', 'risk', 'priority'])
+        ) or finding.severity
+        finding.status = CloudFindingProcessor._normalize_status(
+            CloudFindingProcessor._extract_field(data, ['status', 'state'])
+        ) or finding.status
+        finding.cloud_provider = CloudFindingProcessor._normalize_provider(
+            CloudFindingProcessor._extract_field(data, ['cloud_provider', 'provider', 'cloudProvider'])
+        ) or finding.cloud_provider
+        finding.resource_type = CloudFindingProcessor._extract_field(data, ['resource_type', 'resourceType', 'assetType']) or finding.resource_type
+        finding.resource_id = CloudFindingProcessor._extract_field(data, ['resource_id', 'resourceId', 'assetId']) or finding.resource_id
+        finding.region = CloudFindingProcessor._extract_field(data, ['region', 'location']) or finding.region
+        finding.account_id = CloudFindingProcessor._extract_field(data, ['account_id', 'accountId', 'subscriptionId']) or finding.account_id
+        
+        risk_score = CloudFindingProcessor._extract_numeric(data, ['risk_score', 'riskScore', 'score'])
+        if risk_score is not None:
+            finding.risk_score = risk_score
+        
+        finding.category = CloudFindingProcessor._extract_field(data, ['category', 'type', 'findingType']) or finding.category
+        finding.remediation = CloudFindingProcessor._extract_field(data, ['remediation', 'solution', 'recommendation']) or finding.remediation
+        
+        # Update timestamps if available
+        last_detected = safe_timestamp_to_datetime(
+            CloudFindingProcessor._extract_field(data, ['last_detected', 'lastDetected', 'updatedAt', 'updated'])
+        )
+        if last_detected:
+            finding.last_detected_at = last_detected
+        
+        finding.updated_at = datetime.now(timezone.utc)
+        finding.raw_data = str(data)  # Update raw data
+    
+    @staticmethod
+    def _extract_field(data, field_names):
+        """Try multiple field names to extract data"""
+        for field_name in field_names:
+            if field_name in data and data[field_name]:
+                return data[field_name]
+        return None
+    
+    @staticmethod
+    def _extract_numeric(data, field_names):
+        """Extract numeric field, handling various formats"""
+        value = CloudFindingProcessor._extract_field(data, field_names)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+    
+    @staticmethod
+    def _normalize_severity(severity):
+        """Normalize severity to standard values"""
+        if not severity:
+            return None
+        
+        severity_lower = str(severity).lower()
+        severity_map = {
+            'critical': 'critical', 'crit': 'critical', '4': 'critical',
+            'high': 'high', '3': 'high',
+            'medium': 'medium', 'med': 'medium', '2': 'medium',
+            'low': 'low', '1': 'low',
+            'info': 'info', 'informational': 'info', '0': 'info'
+        }
+        return severity_map.get(severity_lower, severity_lower)
+    
+    @staticmethod
+    def _normalize_status(status):
+        """Normalize status to standard values"""
+        if not status:
+            return 'active'
+        
+        status_lower = str(status).lower()
+        status_map = {
+            'open': 'active', 'active': 'active', 'new': 'active',
+            'closed': 'resolved', 'resolved': 'resolved', 'fixed': 'resolved',
+            'suppressed': 'suppressed', 'ignored': 'suppressed', 'dismissed': 'suppressed',
+            'in_progress': 'in_progress', 'investigating': 'in_progress'
+        }
+        return status_map.get(status_lower, status_lower)
+    
+    @staticmethod
+    def _normalize_provider(provider):
+        """Normalize cloud provider name"""
+        if not provider:
+            return None
+        
+        provider_lower = str(provider).lower()
+        
+        if 'aws' in provider_lower or 'amazon' in provider_lower:
+            return 'aws'
+        elif 'azure' in provider_lower or 'microsoft' in provider_lower:
+            return 'azure'
+        elif 'gcp' in provider_lower or 'google' in provider_lower:
+            return 'gcp'
+        else:
+            return provider_lower
