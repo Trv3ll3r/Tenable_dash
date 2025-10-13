@@ -1,5 +1,6 @@
 """
-Data Ingestion Service - Orchestrates data collection from Tenable APIs
+Data Ingestion Service - Orchestrates data collection from Tenable APIs and Ermetic
+Updated to include cloud security findings from Ermetic
 """
 
 import os
@@ -8,7 +9,7 @@ from flask import current_app
 from sqlalchemy.exc import IntegrityError
 
 from app.tenable_client import get_tenable_client
-from app.data_processor import VulnerabilityProcessor, AttackPathProcessor, WASProcessor
+from app.data_processor import VulnerabilityProcessor, AttackPathProcessor, WASProcessor, CloudFindingProcessor
 from app.database import db
 from app.models import ComplianceRequirement, PluginComplianceMapping
 from config import FeatureFlags
@@ -16,7 +17,7 @@ from config import FeatureFlags
 
 def run_full_ingestion(days_since=None, test_limit=None):
     """
-    Run complete data ingestion from all Tenable sources
+    Run complete data ingestion from all Tenable sources and Ermetic
     
     Args:
         days_since: Number of days to look back (default from config)
@@ -45,6 +46,9 @@ def run_full_ingestion(days_since=None, test_limit=None):
         # Ingest attack path findings
         attack_path_count = ingest_attack_path_findings(tenable_client)
         
+        # Ingest cloud security findings from Ermetic (NEW!)
+        cloud_count = ingest_cloud_findings(tenable_client, days_since)
+        
         # Ingest GRC data
         grc_count = ingest_grc_mappings()
         
@@ -54,15 +58,20 @@ def run_full_ingestion(days_since=None, test_limit=None):
         print(f"📊 Vulnerability Findings: {vm_count}")
         print(f"🌐 WAS Findings: {was_count}")
         print(f"🎯 Attack Paths: {attack_path_count}")
+        print(f"☁️  Cloud Findings: {cloud_count}")
         print(f"📋 GRC Mappings: {grc_count}")
         print("=" * 50)
         
-        current_app.logger.info(f"Full ingestion complete: VM={vm_count}, WAS={was_count}, Paths={attack_path_count}, GRC={grc_count}")
+        current_app.logger.info(
+            f"Full ingestion complete: VM={vm_count}, WAS={was_count}, "
+            f"Paths={attack_path_count}, Cloud={cloud_count}, GRC={grc_count}"
+        )
         
         return {
             'vulnerability_findings': vm_count,
             'was_findings': was_count, 
             'attack_paths': attack_path_count,
+            'cloud_findings': cloud_count,
             'grc_mappings': grc_count
         }
         
@@ -166,6 +175,62 @@ def ingest_attack_path_findings(tenable_client):
     except Exception as e:
         current_app.logger.error(f"Error ingesting attack path findings: {e}")
         print(f"❌ Error ingesting attack path findings: {e}")
+        return 0
+
+
+def ingest_cloud_findings(tenable_client, days_since=30):
+    """
+    Ingest cloud security findings from Ermetic
+    
+    Args:
+        tenable_client: TenableClient instance (which includes Ermetic client)
+        days_since: Number of days to look back
+        
+    Returns:
+        int: Number of cloud findings saved
+    """
+    if not FeatureFlags.ENABLE_CLOUD_METADATA:
+        current_app.logger.info("Cloud findings disabled by feature flag")
+        print("⏭️  Skipping cloud findings (disabled)")
+        return 0
+    
+    # Check if Ermetic is available
+    if not tenable_client.has_ermetic:
+        current_app.logger.info("Ermetic API not configured - skipping cloud findings")
+        print("ℹ️  Ermetic API not configured - skipping cloud findings")
+        print("   To enable: Set ERMETIC_API_URL and ERMETIC_API_TOKEN in .env")
+        return 0
+    
+    current_app.logger.info("Starting cloud findings ingestion from Ermetic")
+    print(f"\n☁️  INGESTING CLOUD SECURITY FINDINGS (ERMETIC)")
+    
+    count_processed = 0
+    count_saved = 0
+    
+    try:
+        for finding_data in tenable_client.fetch_cloud_findings(days_since=days_since):
+            count_processed += 1
+            
+            if CloudFindingProcessor.process_finding(finding_data):
+                count_saved += 1
+            
+            # Progress update
+            if count_processed % 100 == 0:
+                print(f"📊 Processed {count_processed} cloud findings, saved {count_saved}...")
+                db.session.commit()  # Commit batch
+                
+        db.session.commit()  # Final commit
+        
+        current_app.logger.info(f"Cloud findings ingestion complete: {count_processed} processed, {count_saved} saved")
+        print(f"✅ Cloud findings: {count_processed} processed, {count_saved} saved")
+        
+        return count_saved
+        
+    except Exception as e:
+        current_app.logger.error(f"Error ingesting cloud findings: {e}")
+        print(f"❌ Error ingesting cloud findings: {e}")
+        db.session.rollback()
+        # Don't raise - Ermetic may not be available or configured
         return 0
 
 
