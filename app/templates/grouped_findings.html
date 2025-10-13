@@ -65,6 +65,17 @@
             </select>
         </div>
 
+        <div class="form-group mr-3">
+            <label for="ticket_status" class="mr-2 text-white">
+                <i class="fas fa-ticket-alt"></i> Ticket:
+            </label>
+            <select name="ticket_status" id="ticket_status" class="form-control form-control-sm">
+                <option value="all" {% if selected_ticket_status == 'all' or not selected_ticket_status %}selected{% endif %}>All</option>
+                <option value="without_ticket" {% if selected_ticket_status == 'without_ticket' %}selected{% endif %}>No Ticket</option>
+                <option value="with_ticket" {% if selected_ticket_status == 'with_ticket' %}selected{% endif %}>Has Ticket</option>
+            </select>
+        </div>
+
         <div>
             <button type="submit" class="btn btn-primary btn-sm">
                 <i class="fas fa-filter"></i> Apply Filters
@@ -76,8 +87,29 @@
                class="btn btn-success btn-sm ml-2">
                 <i class="fas fa-file-alt"></i> Export All TXT
             </a>
+            <button type="button" class="btn btn-warning btn-sm ml-2" onclick="autoClearFixedTickets()">
+                <i class="fas fa-sync"></i> Clear Fixed Tickets
+            </button>
         </div>
     </form>
+</div>
+
+<!-- Ticket Status Summary -->
+<div class="alert alert-secondary mt-3 mb-3">
+    <div class="row">
+        <div class="col-md-4">
+            <strong><i class="fas fa-ticket-alt"></i> Ticket Tracking:</strong>
+            {{ ticket_stats.with_ticket or 0 }} vulnerabilities have tickets created
+        </div>
+        <div class="col-md-4">
+            <strong><i class="fas fa-exclamation-circle"></i> No Ticket:</strong>
+            {{ ticket_stats.without_ticket or 0 }} vulnerabilities need tickets
+        </div>
+        <div class="col-md-4">
+            <strong><i class="fas fa-check-circle"></i> Auto-cleared:</strong>
+            Fixed findings automatically uncheck tickets
+        </div>
+    </div>
 </div>
 
 <!-- GRC COMPLIANCE IMPACT SUMMARY -->
@@ -147,6 +179,7 @@
     <table class="table table-hover table-sm">
         <thead>
             <tr>
+                <th><i class="fas fa-ticket-alt"></i> Ticket</th>
                 <th><i class="fas fa-puzzle-piece"></i> Plugin Name</th>
                 <th><i class="fas fa-exclamation-triangle"></i> Severity</th>
                 <th><i class="fas fa-tachometer-alt"></i> VPR Score</th>
@@ -161,6 +194,13 @@
         <tbody>
             {% for group in grouped_findings %}
             <tr>
+                <td class="text-center">
+                    <input type="checkbox" 
+                           class="ticket-checkbox" 
+                           data-plugin-id="{{ group.plugin_id }}"
+                           {% if group.has_ticket %}checked{% endif %}
+                           title="Mark as ticket created">
+                </td>
                 <td>
                     <strong>{{ group.plugin_name }}</strong>
                     <br><small class="text-muted">Plugin ID: {{ group.plugin_id }}</small>
@@ -245,7 +285,7 @@
             </tr>
             {% else %}
             <tr>
-                <td colspan="9" class="text-center">
+                <td colspan="10" class="text-center">
                     <i class="fas fa-search"></i> No grouped findings found with current filters.
                     <br><small class="text-muted">Try adjusting your filters above.</small>
                 </td>
@@ -261,6 +301,7 @@
     {{ grouped_findings|length }} unique vulnerabilities found across {{ total_assets }} asset instances.
     Use this view to prioritize remediation efforts by vulnerability type.
     <br><small class="text-muted"><i class="fas fa-file-alt"></i> Click "TXT" button to download individual tickets with GRC compliance mappings.</small>
+    <br><small class="text-muted"><i class="fas fa-info-circle"></i> Check the box when you create a ticket. Tickets automatically uncheck when Tenable marks findings as FIXED.</small>
 </div>
 {% endif %}
 
@@ -273,6 +314,75 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof $ !== 'undefined' && $.fn.tooltip) {
         $('[title]').tooltip();
     }
+    
+    // Handle ticket checkbox changes
+    document.querySelectorAll('.ticket-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const pluginId = this.dataset.pluginId;
+            const isChecked = this.checked;
+            
+            // Disable checkbox while updating
+            this.disabled = true;
+            
+            fetch(`/toggle_ticket/${pluginId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    ticket_created: isChecked
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Show success feedback
+                    const row = this.closest('tr');
+                    row.style.backgroundColor = '#d4edda';
+                    setTimeout(() => {
+                        row.style.backgroundColor = '';
+                    }, 1000);
+                } else {
+                    // Revert checkbox on error
+                    this.checked = !isChecked;
+                    alert('Error updating ticket status: ' + (data.error || 'Unknown error'));
+                }
+                this.disabled = false;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                this.checked = !isChecked;
+                alert('Error updating ticket status');
+                this.disabled = false;
+            });
+        });
+    });
 });
+
+function autoClearFixedTickets() {
+    if (!confirm('This will uncheck all tickets for findings that Tenable has marked as FIXED. Continue?')) {
+        return;
+    }
+    
+    fetch('/auto_clear_fixed_tickets', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`Successfully cleared ${data.cleared_count} ticket flags from FIXED findings.`);
+            location.reload();
+        } else {
+            alert('Error clearing fixed tickets: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error clearing fixed tickets');
+    });
+}
 </script>
 {% endblock %}
