@@ -1,18 +1,55 @@
 {% extends "base.html" %}
 
-{% block title %}Tenable Dashboard - Main{% endblock %}
+{% block title %}WAS Findings - Tenable Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Force proper table cell rendering */
+    .table-container {
+        background: #ffffff !important;
+        color: #2c3e50 !important;
+    }
+    .table-container table {
+        table-layout: auto;
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+    .table-container table td,
+    .table-container table th {
+        vertical-align: middle !important;
+        padding: 12px 8px !important;
+        border-bottom: 1px solid #dee2e6 !important;
+        background-color: #ffffff !important;
+        color: #2c3e50 !important;
+    }
+    .table-container table tbody tr {
+        background-color: #ffffff !important;
+    }
+    .table-container table tbody tr:hover {
+        background-color: #f8f9fa !important;
+    }
+    /* Ensure modals render on dark background */
+    .modal-content {
+        background-color: #ffffff !important;
+        color: #2c3e50 !important;
+    }
+    /* Fix text color in table */
+    .table-container a {
+        color: #3498db !important;
+    }
+    .table-container .text-muted {
+        color: #6c757d !important;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <!-- Navigation Tabs -->
 <ul class="nav nav-tabs mb-3" id="dashboardTabs" role="tablist">
     <li class="nav-item">
-        <a class="nav-link active" id="vulnerability-tab">
-            <i class="fas fa-bug"></i> Vulnerabilities ({{ findings|length }})
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="{{ url_for('main.executive_dashboard') }}">
-            <i class="fas fa-chart-line"></i> Executive Dashboard
+        <a class="nav-link" href="{{ url_for('main.dashboard') }}">
+            <i class="fas fa-bug"></i> Vulnerabilities
         </a>
     </li>
     <li class="nav-item">
@@ -21,8 +58,8 @@
         </a>
     </li>
     <li class="nav-item">
-        <a class="nav-link" href="{{ url_for('main.was_findings') }}">
-            <i class="fas fa-globe"></i> Web App Security
+        <a class="nav-link active">
+            <i class="fas fa-globe"></i> Web App Security ({{ was_findings|length }})
         </a>
     </li>
     <li class="nav-item">
@@ -40,34 +77,36 @@
                 <i class="fas fa-exclamation-triangle"></i> Severity:
             </label>
             <select name="severity" id="severity" class="form-control form-control-sm">
-                <option value="actionable" {% if selected_severity == 'actionable' or not selected_severity %}selected{% endif %}>Actionable (No Info)</option>
+                <option value="all" {% if selected_severity == 'all' or not selected_severity %}selected{% endif %}>All Severities</option>
                 <option value="critical" {% if selected_severity == 'critical' %}selected{% endif %}>Critical Only</option>
                 <option value="high" {% if selected_severity == 'high' %}selected{% endif %}>High Only</option>
                 <option value="medium" {% if selected_severity == 'medium' %}selected{% endif %}>Medium Only</option>
                 <option value="low" {% if selected_severity == 'low' %}selected{% endif %}>Low Only</option>
-                <option value="include_info" {% if selected_severity == 'include_info' %}selected{% endif %}>Include Info</option>
             </select>
         </div>
 
         <div class="form-group mr-3">
-            <label for="state" class="mr-2 text-white">
-                <i class="fas fa-check-circle"></i> State:
+            <label for="status" class="mr-2 text-white">
+                <i class="fas fa-check-circle"></i> Status:
             </label>
-            <select name="state" id="state" class="form-control form-control-sm">
-                <option value="active" {% if selected_state == 'active' or not selected_state %}selected{% endif %}>Active</option>
-                <option value="fixed" {% if selected_state == 'fixed' %}selected{% endif %}>Fixed</option>
-                <option value="all" {% if selected_state == 'all' %}selected{% endif %}>All</option>
+            <select name="status" id="status" class="form-control form-control-sm">
+                <option value="active" {% if selected_status == 'active' or not selected_status %}selected{% endif %}>Active</option>
+                <option value="fixed" {% if selected_status == 'fixed' %}selected{% endif %}>Fixed</option>
+                <option value="all" {% if selected_status == 'all' %}selected{% endif %}>All</option>
             </select>
         </div>
 
         <div class="form-group mr-3">
-            <label for="time_period" class="mr-2 text-white">
-                <i class="fas fa-calendar-alt"></i> Period:
+            <label for="subdomain" class="mr-2 text-white">
+                <i class="fas fa-globe"></i> Domain/URL:
             </label>
-            <select name="time_period" id="time_period" class="form-control form-control-sm">
-                <option value="30_days" {% if selected_time_period == '30_days' or not selected_time_period %}selected{% endif %}>Last 30 Days</option>
-                <option value="7_days" {% if selected_time_period == '7_days' %}selected{% endif %}>Last 7 Days</option>
-                <option value="all" {% if selected_time_period == 'all' %}selected{% endif %}>All Time</option>
+            <select name="subdomain" id="subdomain" class="form-control form-control-sm">
+                <option value="all" {% if selected_subdomain == 'all' or not selected_subdomain %}selected{% endif %}>All Domains</option>
+                {% for subdomain in available_subdomains %}
+                <option value="{{ subdomain }}" {% if selected_subdomain == subdomain %}selected{% endif %}>
+                    {{ subdomain }}
+                </option>
+                {% endfor %}
             </select>
         </div>
 
@@ -75,108 +114,69 @@
             <button type="submit" class="btn btn-primary btn-sm">
                 <i class="fas fa-filter"></i> Apply Filters
             </button>
-            <a href="{{ url_for('main.grouped_findings') }}" class="btn btn-secondary btn-sm ml-2">
-                <i class="fas fa-layer-group"></i> Grouped View
+            <a href="{{ url_for('main.was_findings') }}" class="btn btn-secondary btn-sm ml-2">
+                <i class="fas fa-redo"></i> Reset
             </a>
-            <a href="{{ url_for('export.export_txt') }}" class="btn export-btn btn-sm ml-2">
+            <a href="{{ url_for('export.export_was_findings_csv') }}?severity={{ selected_severity }}&status={{ selected_status }}&subdomain={{ selected_subdomain }}" 
+               class="btn btn-success btn-sm ml-2">
+                <i class="fas fa-file-csv"></i> Export CSV
+            </a>
+            <a href="{{ url_for('export.export_was_findings_txt') }}?severity={{ selected_severity }}&status={{ selected_status }}&subdomain={{ selected_subdomain }}" 
+               class="btn btn-success btn-sm ml-2">
                 <i class="fas fa-file-alt"></i> Export TXT
             </a>
         </div>
     </form>
 </div>
 
-<!-- Dashboard Metrics -->
-<div class="row">
-    <div class="col-md-3">
-        <div class="metric-card">
-            <h5><i class="fas fa-bug"></i> Total Findings</h5>
-            <div class="count">{{ dashboard_data.total_active_findings or 0 }}</div>
-            <small>Active Vulnerabilities</small>
-        </div>
-    </div>
-    
-    <div class="col-md-3">
-        <div class="metric-card">
-            <h5><i class="fas fa-exclamation-triangle"></i> Critical</h5>
-            <div class="count severity-critical">{{ dashboard_data.severity_counts.critical or 0 }}</div>
-            <small>Immediate Action Required</small>
-        </div>
-    </div>
-    
-    <div class="col-md-3">
-        <div class="metric-card">
-            <h5><i class="fas fa-exclamation-circle"></i> High</h5>
-            <div class="count severity-high">{{ dashboard_data.severity_counts.high or 0 }}</div>
-            <small>High Priority Issues</small>
-        </div>
-    </div>
-    
-    <div class="col-md-3">
-        <div class="metric-card">
-            <h5><i class="fas fa-route"></i> Attack Paths</h5>
-            <div class="count">{{ dashboard_data.attack_path_findings or 0 }}</div>
-            <small>In Attack Chains</small>
-        </div>
-    </div>
-</div>
-
-<!-- Info Panel -->
-{% if findings|length == 0 %}
-<div class="alert alert-info">
-    <i class="fas fa-info-circle"></i> 
-    <strong>No findings found with current filters.</strong> 
-    Try adjusting your severity, state, or time period filters above.
-    {% if selected_severity == 'actionable' %}
-    <br><small>Currently showing actionable findings only (excluding informational findings).</small>
-    {% endif %}
+<!-- WAS Summary -->
+{% if was_findings|length == 0 %}
+<div class="alert alert-warning">
+    <i class="fas fa-exclamation-triangle"></i> 
+    <strong>No WAS findings available.</strong> 
+    <br>This could mean:
+    <ul class="mb-0 mt-2">
+        <li>No WAS scans have been completed</li>
+        <li>WAS module requires additional licensing</li>
+        <li>WAS findings are filtered out by current settings</li>
+        <li>WAS API integration needs configuration</li>
+    </ul>
 </div>
 {% else %}
 <div class="alert alert-success">
     <i class="fas fa-check-circle"></i> 
-    <strong>Showing {{ findings|length }} findings</strong> with current filters.
-    {% if selected_severity == 'actionable' or not selected_severity %}
-    (Actionable findings - excluding informational)
+    <strong>Showing {{ was_findings|length }} WAS findings</strong>
+    {% if selected_subdomain != 'all' %}
+    for domain/URL <strong>{{ selected_subdomain }}</strong>
     {% endif %}
+    {% if selected_severity != 'all' %}
+    with <strong>{{ selected_severity|upper }}</strong> severity
+    {% endif %}
+    {% if selected_status != 'all' %}
+    (Status: <strong>{{ selected_status|capitalize }}</strong>)
+    {% endif %}
+    <br><small class="text-muted"><i class="fas fa-file-alt"></i> Click "TXT" button to download individual tickets with GRC compliance mappings.</small>
 </div>
 {% endif %}
 
-<!-- Findings Table -->
+<!-- WAS Findings Table -->
 <div class="table-container">
     <table class="table table-hover table-sm">
         <thead>
             <tr>
-                <th><i class="fas fa-puzzle-piece"></i> Plugin Name</th>
-                <th><i class="fas fa-server"></i> Asset</th>
-                <th><i class="fas fa-desktop"></i> OS</th>
                 <th><i class="fas fa-exclamation-triangle"></i> Severity</th>
-                <th><i class="fas fa-tachometer-alt"></i> VPR Score</th>
-                <th><i class="fas fa-info-circle"></i> Description</th>
-                <th><i class="fas fa-tools"></i> Solution</th>
-                <th><i class="fas fa-calendar-alt"></i> Last Found</th>
+                <th><i class="fas fa-bug"></i> Vulnerability Name</th>
+                <th><i class="fas fa-link"></i> Target URL</th>
+                <th><i class="fas fa-shield-alt"></i> OWASP</th>
                 <th><i class="fas fa-check-circle"></i> Status</th>
+                <th><i class="fas fa-calendar-alt"></i> Last Detected</th>
+                <th><i class="fas fa-shield-alt"></i> GRC</th>
                 <th><i class="fas fa-download"></i> Export</th>
             </tr>
         </thead>
         <tbody>
-            {% for finding in findings %}
+            {% for finding in was_findings %}
             <tr>
-                <td>
-                    <strong>{{ finding.plugin_name or 'Unknown Plugin' }}</strong>
-                    <br><small class="text-muted">Plugin ID: {{ finding.plugin_id }}</small>
-                </td>
-                <td>
-                    <strong>{{ finding.asset_hostname or finding.asset_ipv4 or 'Unknown' }}</strong>
-                    {% if finding.asset_aws_ec2_instance_id %}
-                        <br><small><i class="fab fa-aws"></i> {{ finding.asset_aws_ec2_instance_id }}</small>
-                    {% endif %}
-                    {% if finding.asset_azure_vm_id %}
-                        <br><small><i class="fab fa-microsoft"></i> {{ finding.asset_azure_vm_id }}</small>
-                    {% endif %}
-                    {% if finding.asset_gcp_instance_id %}
-                        <br><small><i class="fab fa-google"></i> {{ finding.asset_gcp_instance_id }}</small>
-                    {% endif %}
-                </td>
-                <td>{{ finding.asset_os or 'N/A' }}</td>
                 <td>
                     {% if finding.severity %}
                         <span class="badge badge-{{ finding.severity|lower }}">{{ finding.severity|upper }}</span>
@@ -185,44 +185,74 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if finding.vpr_score %}
-                        <span class="badge badge-info">{{ "%.1f"|format(finding.vpr_score|float) }}</span>
+                    <strong>{{ finding.vulnerability_name or 'Unknown Vulnerability' }}</strong>
+                    {% if finding.vulnerability_id %}
+                        <br><small class="text-muted">ID: {{ finding.vulnerability_id }}</small>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if finding.target_url %}
+                        <a href="{{ finding.target_url }}" target="_blank" rel="noopener noreferrer" 
+                           style="word-break: break-all; font-size: 0.85em;" 
+                           title="{{ finding.target_url }}">
+                            {{ finding.target_url[:60] }}{% if finding.target_url|length > 60 %}...{% endif %}
+                        </a>
                     {% else %}
                         <span class="text-muted">N/A</span>
                     {% endif %}
                 </td>
                 <td>
-                    <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="{{ finding.description or 'No description available' }}">
-                        {{ (finding.description or 'No description available')[:100] }}{% if finding.description and finding.description|length > 100 %}...{% endif %}
-                    </div>
-                </td>
-                <td>
-                    <div style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="{{ finding.solution or 'No solution available' }}">
-                        {{ (finding.solution or 'No solution available')[:100] }}{% if finding.solution and finding.solution|length > 100 %}...{% endif %}
-                    </div>
-                </td>
-                <td>{{ finding.last_found.strftime('%Y-%m-%d') if finding.last_found else 'N/A' }}</td>
-                <td>
-                    {% if finding.state == 'FIXED' %}
-                        <span class="badge badge-success">FIXED</span>
-                    {% elif finding.state == 'REOPENED' %}
-                        <span class="badge badge-warning">REOPENED</span>
+                    {% if finding.owasp_category %}
+                        <span class="badge badge-info">{{ finding.owasp_category }}</span>
                     {% else %}
-                        <span class="badge badge-danger">{{ finding.state or 'OPEN' }}</span>
+                        <span class="text-muted">N/A</span>
                     {% endif %}
                 </td>
                 <td>
-                    <a href="{{ url_for('export.export_single_finding_txt', finding_id=finding.id) }}" 
-                       class="btn btn-sm btn-success" title="Export as TXT">
-                        <i class="fas fa-file-alt"></i> TXT
+                    {% if finding.status == 'Fixed' %}
+                        <span class="badge badge-success">FIXED</span>
+                    {% else %}
+                        <span class="badge badge-danger">{{ finding.status or 'ACTIVE' }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {{ finding.last_detected_at.strftime('%Y-%m-%d') if finding.last_detected_at else 'N/A' }}
+                </td>
+                <td class="text-center">
+                    {% if finding.plugin_compliance_mappings and finding.plugin_compliance_mappings|length > 0 %}
+                        <i class="fas fa-shield-alt text-success" 
+                           title="{{ finding.plugin_compliance_mappings|length }} GRC mapping(s)" 
+                           data-toggle="tooltip"></i>
+                    {% else %}
+                        <i class="fas fa-minus text-muted" 
+                           title="No GRC mappings" 
+                           data-toggle="tooltip"></i>
+                    {% endif %}
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-info" data-toggle="modal" data-target="#detailModal{{ finding.id }}">
+                        <i class="fas fa-info-circle"></i>
+                    </button>
+                    <a href="{{ url_for('export.export_single_was_finding_txt', finding_id=finding.id) }}" 
+                       class="btn btn-sm btn-success" title="Export as TXT for ticket">
+                        <i class="fas fa-file-alt"></i>
                     </a>
                 </td>
             </tr>
             {% else %}
             <tr>
-                <td colspan="10" class="text-center">
-                    <i class="fas fa-search"></i> No findings found with current filters.
-                    <br><small class="text-muted">Try adjusting your filters above.</small>
+                <td colspan="8" class="text-center">
+                    <i class="fas fa-search"></i> No WAS findings found.
+                    <br><br>
+                    <div class="alert alert-info d-inline-block text-left" style="max-width: 500px;">
+                        <strong>Troubleshooting WAS Data:</strong>
+                        <ol class="mb-0 mt-2">
+                            <li>Verify WAS scans are configured and running</li>
+                            <li>Check if WAS module is licensed in your Tenable subscription</li>
+                            <li>Ensure web applications have been scanned recently</li>
+                            <li>Try adjusting your filters or <a href="{{ url_for('main.was_findings') }}">reset all filters</a></li>
+                        </ol>
+                    </div>
                 </td>
             </tr>
             {% endfor %}
@@ -230,34 +260,186 @@
     </table>
 </div>
 
-<!-- Summary Info -->
-{% if findings|length > 0 %}
-<div class="alert alert-info mt-3">
-    <strong>Summary:</strong> 
-    Displaying {{ findings|length }} findings
-    {% if selected_time_period == '30_days' %}from the last 30 days{% elif selected_time_period == '7_days' %}from the last 7 days{% endif %}
-    {% if selected_state == 'active' %}(active only){% elif selected_state == 'fixed' %}(fixed only){% endif %}.
+<!-- Modals - Outside the table -->
+{% for finding in was_findings %}
+            <div class="modal fade" id="detailModal{{ finding.id }}" tabindex="-1" role="dialog">
+                <div class="modal-dialog modal-lg" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">{{ finding.vulnerability_name or 'WAS Finding Details' }}</h5>
+                            <button type="button" class="close" data-dismiss="modal">
+                                <span>&times;</span>
+                            </button>
+                        </div>
+                        <div class="modal-body">
+                            <h6>Target Information</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <th width="30%">Target URL:</th>
+                                    <td style="word-break: break-all;"><code>{{ finding.target_url or 'N/A' }}</code></td>
+                                </tr>
+                                <tr>
+                                    <th>Vulnerability ID:</th>
+                                    <td>{{ finding.vulnerability_id or 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <th>OWASP Category:</th>
+                                    <td>
+                                        {% if finding.owasp_category %}
+                                            <span class="badge badge-info">{{ finding.owasp_category }}</span>
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Severity:</th>
+                                    <td>
+                                        {% if finding.severity == 'critical' %}
+                                            <span class="badge badge-danger">CRITICAL</span>
+                                        {% elif finding.severity == 'high' %}
+                                            <span class="badge badge-warning">HIGH</span>
+                                        {% elif finding.severity == 'medium' %}
+                                            <span class="badge badge-info">MEDIUM</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">{{ finding.severity|upper }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>CVSS v3 Score:</th>
+                                    <td>{{ finding.cvss_v3_base_score or 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Status:</th>
+                                    <td>
+                                        {% if finding.status == 'Active' %}
+                                            <span class="badge badge-danger">Active</span>
+                                        {% elif finding.status == 'Fixed' %}
+                                            <span class="badge badge-success">Fixed</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">{{ finding.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </table>
+
+                            {% if finding.description %}
+                            <h6 class="mt-3">Description</h6>
+                            <div class="alert alert-light">
+                                {{ finding.description }}
+                            </div>
+                            {% endif %}
+
+                            {% if finding.solution %}
+                            <h6 class="mt-3">Solution</h6>
+                            <div class="alert alert-success">
+                                {{ finding.solution }}
+                            </div>
+                            {% endif %}
+
+                            {% if finding.plugin_compliance_mappings %}
+                            <h6 class="mt-3">GRC Compliance Mappings</h6>
+                            <table class="table table-sm table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>Framework</th>
+                                        <th>Requirement ID</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for mapping in finding.plugin_compliance_mappings %}
+                                        {% if mapping.compliance_requirement %}
+                                        <tr>
+                                            <td><span class="badge badge-primary">{{ mapping.compliance_requirement.framework }}</span></td>
+                                            <td>{{ mapping.compliance_requirement.requirement_id }}</td>
+                                            <td><small>{{ mapping.compliance_requirement.description }}</small></td>
+                                        </tr>
+                                        {% endif %}
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% endif %}
+
+                            <h6 class="mt-3">Timeline</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <th width="30%">First Detected:</th>
+                                    <td>{{ finding.first_detected_at.strftime('%Y-%m-%d %H:%M') if finding.first_detected_at else 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Last Detected:</th>
+                                    <td>{{ finding.last_detected_at.strftime('%Y-%m-%d %H:%M') if finding.last_detected_at else 'N/A' }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="modal-footer">
+                            <a href="{{ url_for('export.export_single_was_finding_csv', finding_id=finding.id) }}" class="btn btn-success btn-sm">
+                                <i class="fas fa-download"></i> Export CSV
+                            </a>
+                            <a href="{{ url_for('export.export_single_was_finding_txt', finding_id=finding.id) }}" class="btn btn-info btn-sm">
+                                <i class="fas fa-file-alt"></i> Export TXT
+                            </a>
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <tr>
+                <td colspan="8" class="text-center">
+                    <i class="fas fa-search"></i> No WAS findings found.
+                    <br><br>
+                    <div class="alert alert-info d-inline-block text-left" style="max-width: 500px;">
+                        <strong>Troubleshooting WAS Data:</strong>
+                        <ol class="mb-0 mt-2">
+                            <li>Verify WAS scans are configured and running</li>
+                            <li>Check if WAS module is licensed in your Tenable subscription</li>
+                            <li>Ensure web applications have been scanned recently</li>
+                            <li>Try adjusting your filters or <a href="{{ url_for('main.was_findings') }}">reset all filters</a></li>
+                        </ol>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
-{% endif %}
+
+<!-- Debug Information -->
+<div class="alert alert-secondary mt-4">
+    <h6><i class="fas fa-info-circle"></i> WAS Integration Status</h6>
+    <div class="row">
+        <div class="col-md-4">
+            <strong>WAS Findings in DB:</strong> {{ was_findings|length }}
+        </div>
+        <div class="col-md-4">
+            <strong>Feature Flag:</strong> 
+            <span class="badge badge-success">Enabled</span>
+        </div>
+        <div class="col-md-4">
+            <strong>Last Updated:</strong> During last data ingestion
+        </div>
+    </div>
+</div>
 
 {% endblock %}
 
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Add click-to-copy functionality for asset names
-    document.querySelectorAll('td strong').forEach(element => {
-        element.style.cursor = 'pointer';
-        element.title = 'Click to copy';
-        element.addEventListener('click', function() {
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(this.textContent).then(() => {
-                    const originalColor = this.style.color;
-                    this.style.color = '#28a745';
-                    setTimeout(() => {
-                        this.style.color = originalColor;
-                    }, 500);
-                });
+    // Enable Bootstrap tooltips
+    if (typeof $ !== 'undefined' && $.fn.tooltip) {
+        $('[data-toggle="tooltip"]').tooltip();
+    }
+    
+    // Add click-to-copy for URLs
+    document.querySelectorAll('a[href^="http"]').forEach(link => {
+        link.addEventListener('click', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                // Allow normal click with Ctrl/Cmd
+                return true;
             }
         });
     });
