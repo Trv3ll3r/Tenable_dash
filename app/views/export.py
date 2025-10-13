@@ -3,14 +3,19 @@ import csv
 from datetime import datetime, timedelta, timezone
 from flask import Blueprint, make_response, current_app, request
 from sqlalchemy.orm import subqueryload
+from sqlalchemy import case
+from collections import defaultdict
+import traceback
 
 from ..database import db
 from ..models import VulnerabilityFinding, WASFinding, PluginComplianceMapping, ComplianceRequirement
 
+# CREATE THE BLUEPRINT FIRST
 export_bp = Blueprint('export', __name__)
 
+
 def generate_csv_content(findings):
-    """Generate CSV content for findings"""
+    """Generate CSV content for findings with enhanced NIST 800-53 columns"""
     csv_buffer = io.StringIO()
     csv_writer = csv.writer(csv_buffer)
 
@@ -18,7 +23,8 @@ def generate_csv_content(findings):
         "Plugin Name", "Plugin ID", "Asset Hostname", "Asset IPv4", "Severity", "VPR Score",
         "CVSSv3 Base Score", "Description", "Solution", "First Found", "Last Found",
         "State", "Cloud Provider", "Attack Path Score", "Attack Path Involved", 
-        "GRC Frameworks", "GRC Requirements", "NIST Requirements", "Asset OS"
+        "NIST 800-53 Controls", "NIST Control Count", "PCI DSS Requirements", "SOC 2 Requirements",
+        "GDPR Requirements", "All GRC Frameworks", "Total GRC Requirements", "Asset OS"
     ]
     csv_writer.writerow(header)
 
@@ -31,796 +37,795 @@ def generate_csv_content(findings):
         elif finding.asset_gcp_instance_id:
             cloud_provider = "GCP"
 
-        grc_frameworks = []
-        grc_requirements = []
-        nist_requirements = []
+        grc_by_framework = defaultdict(list)
         
         if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
             for mapping in finding.plugin_compliance_mappings:
                 if mapping.compliance_requirement:
                     framework = mapping.compliance_requirement.framework
                     req_id = mapping.compliance_requirement.requirement_id
-                    
-                    grc_frameworks.append(framework)
-                    grc_requirements.append(f"{framework}: {req_id}")
-                    
-                    if framework == 'NIST 800-53':
-                        nist_requirements.append(req_id)
+                    grc_by_framework[framework].append(req_id)
         
-        grc_frameworks_str = " | ".join(set(grc_frameworks)) if grc_frameworks else "N/A"
-        grc_requirements_str = " | ".join(grc_requirements) if grc_requirements else "N/A"
-        nist_requirements_str = " | ".join(nist_requirements) if nist_requirements else "N/A"
+        nist_controls = " | ".join(grc_by_framework.get('NIST 800-53', [])) if grc_by_framework.get('NIST 800-53') else "N/A"
+        nist_count = len(grc_by_framework.get('NIST 800-53', []))
+        pci_reqs = " | ".join(grc_by_framework.get('PCI DSS', [])) if grc_by_framework.get('PCI DSS') else "N/A"
+        soc2_reqs = " | ".join(grc_by_framework.get('SOC 2', [])) if grc_by_framework.get('SOC 2') else "N/A"
+        gdpr_reqs = " | ".join(grc_by_framework.get('GDPR', [])) if grc_by_framework.get('GDPR') else "N/A"
+        
+        all_frameworks = []
+        for framework, reqs in grc_by_framework.items():
+            all_frameworks.extend([f"{framework}:{req}" for req in reqs])
+        all_grc_text = " | ".join(all_frameworks) if all_frameworks else "N/A"
+        total_grc = len(all_frameworks)
 
-        description = finding.description or "No description"
-        if len(description) > 500:
-            description = description[:497] + "..."
-            
-        solution = finding.solution or "No solution"
-        if len(solution) > 500:
-            solution = solution[:497] + "..."
+        attack_path_involved = "Yes" if finding.is_in_attack_path else "No"
 
-        row = [
-            finding.plugin_name or "Unknown Plugin",
-            finding.plugin_id or "",
-            finding.asset_hostname or "",
-            finding.asset_ipv4 or "",
-            finding.severity or "",
-            finding.vpr_score or "",
-            finding.cvss_v3_base_score or "",
-            description,
-            solution,
-            finding.first_found.isoformat() if finding.first_found else '',
-            finding.last_found.isoformat() if finding.last_found else '',
-            finding.state or "OPEN",
+        csv_writer.writerow([
+            finding.plugin_name or "N/A",
+            finding.plugin_id or "N/A",
+            finding.asset_hostname or "N/A",
+            finding.asset_ipv4 or "N/A",
+            finding.severity or "N/A",
+            f"{finding.vpr_score:.2f}" if finding.vpr_score else "N/A",
+            f"{finding.cvss_v3_base_score:.2f}" if finding.cvss_v3_base_score else "N/A",
+            finding.description or "N/A",
+            finding.solution or "N/A",
+            finding.first_found.strftime("%Y-%m-%d") if finding.first_found else "N/A",
+            finding.last_found.strftime("%Y-%m-%d") if finding.last_found else "N/A",
+            finding.state or "N/A",
             cloud_provider,
-            finding.attack_path_score or "",
-            "Yes" if hasattr(finding, 'is_in_attack_path') and finding.is_in_attack_path else "No",
-            grc_frameworks_str,
-            grc_requirements_str,
-            nist_requirements_str,
-            finding.asset_os or ""
-        ]
-        csv_writer.writerow(row)
+            f"{finding.attack_path_score:.2f}" if finding.attack_path_score else "N/A",
+            attack_path_involved,
+            nist_controls,
+            nist_count,
+            pci_reqs,
+            soc2_reqs,
+            gdpr_reqs,
+            all_grc_text,
+            total_grc,
+            finding.asset_os or "N/A"
+        ])
 
     return csv_buffer.getvalue()
 
-def generate_txt_content(findings):
-    """Generate TXT format report for findings"""
-    content = []
-    content.append("=" * 80)
-    content.append("TENABLE VULNERABILITY FINDINGS REPORT")
-    content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-    content.append(f"Total Findings: {len(findings)}")
-    content.append("=" * 80)
-    content.append("")
-
-    severity_counts = {}
-    attack_path_count = 0
-    cloud_count = 0
-    grc_mapped_count = 0
-    nist_mapped_count = 0
-    
-    for finding in findings:
-        severity = finding.severity or 'unknown'
-        severity_counts[severity] = severity_counts.get(severity, 0) + 1
-        if hasattr(finding, 'is_in_attack_path') and finding.is_in_attack_path:
-            attack_path_count += 1
-        if (finding.asset_aws_ec2_instance_id or 
-            finding.asset_azure_vm_id or 
-            finding.asset_gcp_instance_id):
-            cloud_count += 1
-        if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
-            grc_mapped_count += 1
-            for mapping in finding.plugin_compliance_mappings:
-                if mapping.compliance_requirement and mapping.compliance_requirement.framework == 'NIST 800-53':
-                    nist_mapped_count += 1
-                    break
-
-    content.append("EXECUTIVE SUMMARY:")
-    content.append("-" * 30)
-    for severity in ['critical', 'high', 'medium', 'low']:
-        count = severity_counts.get(severity, 0)
-        content.append(f"{severity.upper():>12}: {count}")
-    content.append("")
-    content.append(f"ATTACK PATH FINDINGS: {attack_path_count}")
-    content.append(f"CLOUD FINDINGS: {cloud_count}")
-    content.append(f"GRC MAPPED FINDINGS: {grc_mapped_count}")
-    content.append(f"NIST 800-53 MAPPED: {nist_mapped_count}")
-    content.append("")
-    content.append("=" * 80)
-    content.append("")
-
-    for i, finding in enumerate(findings, 1):
-        content.append(f"FINDING #{i}")
-        content.append("-" * 40)
-        content.append(f"Plugin Name: {finding.plugin_name}")
-        content.append(f"Plugin ID: {finding.plugin_id}")
-        content.append(f"Severity: {finding.severity}")
-        
-        if finding.vpr_score:
-            content.append(f"VPR Score: {finding.vpr_score}")
-        if finding.cvss_v3_base_score:
-            content.append(f"CVSS v3 Base Score: {finding.cvss_v3_base_score}")
-        if hasattr(finding, 'attack_path_score') and finding.attack_path_score:
-            content.append(f"Attack Path Score: {finding.attack_path_score}")
-        if hasattr(finding, 'asset_exposure_score') and finding.asset_exposure_score:
-            content.append(f"Asset Exposure Score: {finding.asset_exposure_score}")
-            
-        content.append("")
-        content.append("AFFECTED ASSET:")
-        asset_id = (finding.asset_hostname or 
-                   finding.asset_ipv4 or 
-                   finding.asset_aws_ec2_instance_id or 
-                   finding.asset_azure_vm_id or 
-                   finding.asset_gcp_instance_id or 
-                   'Unknown')
-        content.append(f"  Asset: {asset_id}")
-        
-        if finding.asset_os:
-            content.append(f"  Operating System: {finding.asset_os}")
-            
-        if finding.asset_aws_ec2_instance_id:
-            content.append(f"  AWS EC2 Instance: {finding.asset_aws_ec2_instance_id}")
-        if finding.asset_azure_vm_id:
-            content.append(f"  Azure VM: {finding.asset_azure_vm_id}")
-        if finding.asset_gcp_instance_id:
-            content.append(f"  GCP Instance: {finding.asset_gcp_instance_id}")
-            
-        if hasattr(finding, 'business_criticality') and finding.business_criticality:
-            content.append(f"  Business Criticality: {finding.business_criticality}")
-            
-        content.append("")
-        
-        if finding.description:
-            content.append("DESCRIPTION:")
-            desc_text = finding.description
-            if len(desc_text) > 500:
-                desc_text = desc_text[:500] + "..."
-            content.append(desc_text)
-            content.append("")
-            
-        if finding.solution:
-            content.append("SOLUTION:")
-            sol_text = finding.solution
-            if len(sol_text) > 500:
-                sol_text = sol_text[:500] + "..."
-            content.append(sol_text)
-            content.append("")
-            
-        if hasattr(finding, 'is_in_attack_path') and finding.is_in_attack_path:
-            content.append("⚠️ PART OF ATTACK PATH")
-            content.append("")
-            
-        if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
-            nist_mappings = []
-            other_mappings = []
-            
-            for mapping in finding.plugin_compliance_mappings:
-                if mapping.compliance_requirement:
-                    if mapping.compliance_requirement.framework == 'NIST 800-53':
-                        nist_mappings.append(mapping)
-                    else:
-                        other_mappings.append(mapping)
-            
-            if nist_mappings:
-                content.append("NIST 800-53 COMPLIANCE IMPACT:")
-                for mapping in nist_mappings:
-                    content.append(f"  • {mapping.compliance_requirement.requirement_id}")
-                    if mapping.compliance_requirement.description:
-                        desc = mapping.compliance_requirement.description
-                        if len(desc) > 100:
-                            desc = desc[:100] + "..."
-                        content.append(f"    {desc}")
-                content.append("")
-            
-            if other_mappings:
-                content.append("OTHER GRC COMPLIANCE IMPACT:")
-                for mapping in other_mappings:
-                    content.append(f"  • {mapping.compliance_requirement.framework}: "
-                                 f"{mapping.compliance_requirement.requirement_id}")
-                    if mapping.compliance_requirement.description:
-                        desc = mapping.compliance_requirement.description
-                        if len(desc) > 100:
-                            desc = desc[:100] + "..."
-                        content.append(f"    {desc}")
-                content.append("")
-        else:
-            content.append("GRC COMPLIANCE IMPACT: None configured")
-            content.append("")
-            
-        content.append("TIMELINE:")
-        if finding.first_found:
-            content.append(f"  First Found: {finding.first_found.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        if finding.last_found:
-            content.append(f"  Last Found: {finding.last_found.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        if hasattr(finding, 'fixed_at') and finding.fixed_at:
-            content.append(f"  Fixed At: {finding.fixed_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-            
-        content.append("")
-        content.append("=" * 80)
-        content.append("")
-
-    return "\n".join(content)
 
 @export_bp.route('/export_csv')
 def export_csv():
-    """Export all findings to CSV"""
+    """Export vulnerability findings to CSV"""
     try:
-        findings = db.session.query(VulnerabilityFinding).options(
-            subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
-                PluginComplianceMapping.compliance_requirement
-            )
-        ).filter(
-            VulnerabilityFinding.state.in_(['OPEN', 'REOPENED']),
-            VulnerabilityFinding.severity.notin_(['info'])
-        ).order_by(VulnerabilityFinding.severity.desc()).all()
-        
+        findings = VulnerabilityFinding.query.options(
+            subqueryload(VulnerabilityFinding.plugin_compliance_mappings)
+                .subqueryload(PluginComplianceMapping.compliance_requirement)
+        ).all()
+
         csv_content = generate_csv_content(findings)
         
         response = make_response(csv_content)
-        response.headers["Content-Disposition"] = f"attachment; filename=tenable_findings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        response.headers["Content-type"] = "text/csv"
+        response.headers["Content-Disposition"] = f"attachment; filename=vulnerability_findings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        response.headers["Content-Type"] = "text/csv"
         return response
-        
     except Exception as e:
-        current_app.logger.error(f"Error during CSV export: {e}")
-        return f"Error generating CSV report: {str(e)}", 500
+        current_app.logger.error(f"Error generating CSV export: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating CSV: {str(e)}", 500
+
 
 @export_bp.route('/export_txt')
 def export_txt():
-    """Export all findings to TXT format"""
+    """Export vulnerability findings to TXT format for ticketing"""
     try:
-        findings = db.session.query(VulnerabilityFinding).options(
-            subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
-                PluginComplianceMapping.compliance_requirement
-            )
-        ).filter(
-            VulnerabilityFinding.state.in_(['OPEN', 'REOPENED']),
-            VulnerabilityFinding.severity.notin_(['info'])
-        ).order_by(VulnerabilityFinding.severity.desc()).all()
-        
-        txt_content = generate_txt_content(findings)
-        
-        response = make_response(txt_content)
-        response.headers["Content-Disposition"] = f"attachment; filename=tenable_findings_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        response.headers["Content-type"] = "text/plain; charset=utf-8"
-        return response
-        
-    except Exception as e:
-        current_app.logger.error(f"Error during TXT export: {e}")
-        return f"Error generating TXT report: {str(e)}", 500
+        findings = VulnerabilityFinding.query.options(
+            subqueryload(VulnerabilityFinding.plugin_compliance_mappings)
+                .subqueryload(PluginComplianceMapping.compliance_requirement)
+        ).all()
 
-@export_bp.route('/export_single_finding_txt/<int:finding_id>')
-def export_single_finding_txt(finding_id):
-    """Export single finding as TXT for tickets"""
+        txt_content = []
+        txt_content.append("=" * 80)
+        txt_content.append("VULNERABILITY FINDINGS EXPORT")
+        txt_content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        txt_content.append(f"Total Findings: {len(findings)}")
+        txt_content.append("=" * 80)
+        txt_content.append("")
+
+        for i, finding in enumerate(findings, 1):
+            txt_content.append(f"FINDING #{i}")
+            txt_content.append("-" * 80)
+            txt_content.append(f"Plugin: {finding.plugin_name or 'N/A'} (ID: {finding.plugin_id or 'N/A'})")
+            txt_content.append(f"Asset: {finding.asset_hostname or 'N/A'} ({finding.asset_ipv4 or 'N/A'})")
+            txt_content.append(f"Severity: {finding.severity or 'N/A'}")
+            txt_content.append(f"VPR Score: {finding.vpr_score:.2f}" if finding.vpr_score else "VPR Score: N/A")
+            txt_content.append(f"CVSS Base Score: {finding.cvss_v3_base_score:.2f}" if finding.cvss_v3_base_score else "CVSS Base Score: N/A")
+            txt_content.append(f"State: {finding.state or 'N/A'}")
+            txt_content.append(f"First Found: {finding.first_found.strftime('%Y-%m-%d')}" if finding.first_found else "First Found: N/A")
+            txt_content.append(f"Last Found: {finding.last_found.strftime('%Y-%m-%d')}" if finding.last_found else "Last Found: N/A")
+            
+            if finding.is_in_attack_path:
+                txt_content.append(f"Attack Path Score: {finding.attack_path_score:.2f}" if finding.attack_path_score else "Attack Path Score: N/A")
+            
+            grc_by_framework = defaultdict(list)
+            if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
+                for mapping in finding.plugin_compliance_mappings:
+                    if mapping.compliance_requirement:
+                        framework = mapping.compliance_requirement.framework
+                        req_id = mapping.compliance_requirement.requirement_id
+                        grc_by_framework[framework].append(req_id)
+            
+            if grc_by_framework:
+                txt_content.append("\nCompliance Mappings:")
+                for framework, reqs in sorted(grc_by_framework.items()):
+                    txt_content.append(f"  {framework}: {', '.join(reqs)}")
+            
+            txt_content.append(f"\nDescription:\n{finding.description or 'N/A'}")
+            txt_content.append(f"\nSolution:\n{finding.solution or 'N/A'}")
+            txt_content.append("=" * 80)
+            txt_content.append("")
+
+        response = make_response("\n".join(txt_content))
+        response.headers["Content-Disposition"] = f"attachment; filename=vulnerability_findings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        response.headers["Content-Type"] = "text/plain"
+        return response
+    except Exception as e:
+        current_app.logger.error(f"Error generating TXT export: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating TXT: {str(e)}", 500
+
+
+@export_bp.route('/export_was_findings_csv')
+def export_was_findings_csv():
+    """Export WAS findings to CSV with URL filtering"""
     try:
-        finding = db.session.query(VulnerabilityFinding).options(
-            subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
-                PluginComplianceMapping.compliance_requirement
-            )
-        ).filter_by(id=finding_id).first()
+        url_filter = request.args.get('subdomain', '').strip()  # Keep param name for compatibility
         
-        if not finding:
-            return "Finding not found", 404
+        query = WASFinding.query
+        if url_filter:
+            query = query.filter(WASFinding.target_url.ilike(f"%{url_filter}%"))
+        
+        was_findings = query.all()
 
-        txt_content = generate_txt_content([finding])
-        
-        response = make_response(txt_content)
-        response.headers["Content-Disposition"] = f"attachment; filename=ticket_finding_{finding.id}_{finding.plugin_id}.txt"
-        response.headers["Content-type"] = "text/plain; charset=utf-8"
-        return response
-        
-    except Exception as e:
-        current_app.logger.error(f"Error exporting single finding TXT {finding_id}: {e}")
-        return f"Error exporting finding: {str(e)}", 500
+        csv_buffer = io.StringIO()
+        csv_writer = csv.writer(csv_buffer)
 
-@export_bp.route('/export_grouped_findings_txt')
-def export_grouped_findings_txt():
-    """Export grouped findings as TXT with GRC and NIST mappings"""
-    try:
-        selected_severity = request.args.get('severity', 'actionable')
-        selected_state = request.args.get('state', 'active')
-        selected_time_period = request.args.get('time_period', '30_days')
-        
-        query = db.session.query(VulnerabilityFinding)
-        
-        if selected_state == 'active':
-            query = query.filter(VulnerabilityFinding.state.in_(['OPEN', 'REOPENED']))
-        elif selected_state == 'fixed':
-            query = query.filter(VulnerabilityFinding.state == 'FIXED')
-        
-        if selected_severity == 'actionable' or not selected_severity:
-            query = query.filter(VulnerabilityFinding.severity.notin_(['info']))
-        elif selected_severity in ['critical', 'high', 'medium', 'low']:
-            query = query.filter(VulnerabilityFinding.severity == selected_severity)
-        
-        if selected_time_period == '30_days':
-            thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
-            query = query.filter(VulnerabilityFinding.last_found >= thirty_days_ago)
-        elif selected_time_period == '7_days':
-            seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
-            query = query.filter(VulnerabilityFinding.last_found >= seven_days_ago)
-        
-        query = query.options(
-            subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
-                PluginComplianceMapping.compliance_requirement
-            )
-        )
-        
-        all_findings = query.all()
-        
-        grouped_findings = {}
-        for finding in all_findings:
-            plugin_key = f"{finding.plugin_id}"
-            
-            if plugin_key not in grouped_findings:
-                grc_mappings = []
-                nist_mappings = []
-                
-                if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
-                    for mapping in finding.plugin_compliance_mappings:
-                        if mapping.compliance_requirement:
-                            mapping_data = {
-                                'framework': mapping.compliance_requirement.framework,
-                                'requirement_id': mapping.compliance_requirement.requirement_id,
-                                'description': mapping.compliance_requirement.description
-                            }
-                            grc_mappings.append(mapping_data)
-                            
-                            if mapping.compliance_requirement.framework == 'NIST 800-53':
-                                nist_mappings.append(mapping_data)
-                
-                grouped_findings[plugin_key] = {
-                    'plugin_id': finding.plugin_id,
-                    'plugin_name': finding.plugin_name or 'Unknown Plugin',
-                    'severity': finding.severity,
-                    'vpr_score': finding.vpr_score,
-                    'description': finding.description,
-                    'solution': finding.solution,
-                    'grc_mappings': grc_mappings,
-                    'nist_mappings': nist_mappings,
-                    'affected_assets': [],
-                    'asset_count': 0
-                }
-            
-            asset_str = finding.asset_hostname or finding.asset_ipv4 or 'Unknown'
-            if finding.asset_aws_ec2_instance_id:
-                asset_str += f" (AWS: {finding.asset_aws_ec2_instance_id})"
-            elif finding.asset_azure_vm_id:
-                asset_str += f" (Azure: {finding.asset_azure_vm_id})"
-            elif finding.asset_gcp_instance_id:
-                asset_str += f" (GCP: {finding.asset_gcp_instance_id})"
-            
-            grouped_findings[plugin_key]['affected_assets'].append(asset_str)
-            grouped_findings[plugin_key]['asset_count'] += 1
-        
-        content = []
-        content.append("=" * 80)
-        content.append("TENABLE GROUPED VULNERABILITY FINDINGS REPORT")
-        content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        content.append(f"Total Unique Vulnerabilities: {len(grouped_findings)}")
-        content.append(f"Total Affected Asset Instances: {sum(g['asset_count'] for g in grouped_findings.values())}")
-        content.append("=" * 80)
-        content.append("")
-        
-        severity_order = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1}
-        sorted_groups = sorted(
-            grouped_findings.values(),
-            key=lambda x: (severity_order.get(x['severity'], 0), x['asset_count']),
-            reverse=True
-        )
-        
-        for i, group in enumerate(sorted_groups, 1):
-            content.append(f"VULNERABILITY #{i}")
-            content.append("-" * 40)
-            content.append(f"Plugin Name: {group['plugin_name']}")
-            content.append(f"Plugin ID: {group['plugin_id']}")
-            content.append(f"Severity: {group['severity'] or 'Unknown'}")
-            content.append(f"Affected Assets: {group['asset_count']}")
-            
-            if group['vpr_score']:
-                content.append(f"VPR Score: {group['vpr_score']}")
-            
-            content.append("")
-            content.append("AFFECTED ASSETS:")
-            for asset in group['affected_assets'][:50]:
-                content.append(f"  • {asset}")
-            if group['asset_count'] > 50:
-                content.append(f"  ... and {group['asset_count'] - 50} more assets")
-            
-            content.append("")
-            
-            if group['description']:
-                content.append("DESCRIPTION:")
-                desc_text = group['description']
-                if len(desc_text) > 500:
-                    desc_text = desc_text[:500] + "..."
-                content.append(desc_text)
-                content.append("")
-            
-            if group['solution']:
-                content.append("SOLUTION:")
-                sol_text = group['solution']
-                if len(sol_text) > 500:
-                    sol_text = sol_text[:500] + "..."
-                content.append(sol_text)
-                content.append("")
-            
-            if group['nist_mappings']:
-                content.append("NIST 800-53 COMPLIANCE IMPACT:")
-                for mapping in group['nist_mappings']:
-                    content.append(f"  • {mapping['requirement_id']}")
-                    if mapping['description']:
-                        desc = mapping['description']
-                        if len(desc) > 100:
-                            desc = desc[:100] + "..."
-                        content.append(f"    {desc}")
-                content.append("")
-            
-            other_grc = [m for m in group['grc_mappings'] if m['framework'] != 'NIST 800-53']
-            if other_grc:
-                content.append("OTHER GRC COMPLIANCE IMPACT:")
-                for mapping in other_grc:
-                    content.append(f"  • {mapping['framework']}: {mapping['requirement_id']}")
-                    if mapping['description']:
-                        desc = mapping['description']
-                        if len(desc) > 100:
-                            desc = desc[:100] + "..."
-                        content.append(f"    {desc}")
-                content.append("")
-            
-            if not group['grc_mappings']:
-                content.append("GRC COMPLIANCE IMPACT: None configured")
-                content.append("")
-            
-            content.append("=" * 80)
-            content.append("")
-        
-        txt_content = "\n".join(content)
-        response = make_response(txt_content)
-        response.headers["Content-Disposition"] = f"attachment; filename=grouped_findings_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        response.headers["Content-type"] = "text/plain; charset=utf-8"
+        header = [
+            "Vulnerability Name", "Vulnerability ID", "Target URL", "Severity", "Status",
+            "OWASP Category", "CVSS v3 Score", "Description", "Solution", 
+            "First Detected", "Last Detected"
+        ]
+        csv_writer.writerow(header)
+
+        for finding in was_findings:
+            csv_writer.writerow([
+                finding.vulnerability_name or "N/A",
+                finding.vulnerability_id or "N/A",
+                finding.target_url or "N/A",
+                finding.severity or "N/A",
+                finding.status or "N/A",
+                finding.owasp_category or "N/A",
+                finding.cvss_v3_base_score or "N/A",
+                finding.description or "N/A",
+                finding.solution or "N/A",
+                finding.first_detected_at.strftime("%Y-%m-%d") if finding.first_detected_at else "N/A",
+                finding.last_detected_at.strftime("%Y-%m-%d") if finding.last_detected_at else "N/A"
+            ])
+
+        response = make_response(csv_buffer.getvalue())
+        filename = f"was_findings_{url_filter}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv" if url_filter else f"was_findings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        response.headers["Content-Type"] = "text/csv"
         return response
-        
     except Exception as e:
-        current_app.logger.error(f"Error exporting grouped findings: {e}")
-        return f"Error exporting grouped findings: {str(e)}", 500
+        current_app.logger.error(f"Error generating WAS CSV export: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating CSV: {str(e)}", 500
+
 
 @export_bp.route('/export_was_findings_txt')
 def export_was_findings_txt():
-    """Export WAS findings as TXT with GRC mappings"""
+    """Export WAS findings to TXT format with URL filtering"""
     try:
-        selected_severity = request.args.get('severity', 'all')
-        selected_status = request.args.get('status', 'active')
+        url_filter = request.args.get('subdomain', '').strip()  # Keep param name for compatibility
         
-        query = db.session.query(WASFinding)
-        
-        if selected_status == 'active':
-            query = query.filter(WASFinding.status == 'Active')
-        elif selected_status == 'fixed':
-            query = query.filter(WASFinding.status == 'Fixed')
-        
-        if selected_severity != 'all':
-            query = query.filter(WASFinding.severity == selected_severity)
-        
-        query = query.options(
-            subqueryload(WASFinding.plugin_compliance_mappings).subqueryload(
-                PluginComplianceMapping.compliance_requirement
-            )
-        )
+        query = WASFinding.query
+        if url_filter:
+            query = query.filter(WASFinding.target_url.ilike(f"%{url_filter}%"))
         
         was_findings = query.all()
-        
-        content = []
-        content.append("=" * 80)
-        content.append("TENABLE WEB APPLICATION SECURITY FINDINGS REPORT")
-        content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        content.append(f"Total WAS Findings: {len(was_findings)}")
-        content.append("=" * 80)
-        content.append("")
-        
-        severity_counts = {}
-        grc_mapped_count = 0
-        
-        for finding in was_findings:
-            severity = finding.severity or 'unknown'
-            severity_counts[severity] = severity_counts.get(severity, 0) + 1
-            if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
-                grc_mapped_count += 1
-        
-        content.append("EXECUTIVE SUMMARY:")
-        content.append("-" * 30)
-        for severity in ['critical', 'high', 'medium', 'low']:
-            count = severity_counts.get(severity, 0)
-            content.append(f"{severity.upper():>12}: {count}")
-        content.append(f"{'GRC MAPPED':>12}: {grc_mapped_count}")
-        content.append("")
-        content.append("=" * 80)
-        content.append("")
-        
+
+        txt_content = []
+        txt_content.append("=" * 80)
+        txt_content.append("WEB APPLICATION SECURITY (WAS) FINDINGS EXPORT")
+        if url_filter:
+            txt_content.append(f"Filtered by URL pattern: {url_filter}")
+        txt_content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        txt_content.append(f"Total Findings: {len(was_findings)}")
+        txt_content.append("=" * 80)
+        txt_content.append("")
+
         for i, finding in enumerate(was_findings, 1):
-            content.append(f"WAS FINDING #{i}")
-            content.append("-" * 40)
-            content.append(f"Vulnerability Name: {finding.vulnerability_name or 'Unknown'}")
+            txt_content.append(f"WAS FINDING #{i}")
+            txt_content.append("-" * 80)
+            txt_content.append(f"Vulnerability: {finding.vulnerability_name or 'N/A'} (ID: {finding.vulnerability_id or 'N/A'})")
+            txt_content.append(f"Target URL: {finding.target_url or 'N/A'}")
+            txt_content.append(f"Severity: {finding.severity or 'N/A'}")
+            txt_content.append(f"Status: {finding.status or 'N/A'}")
+            txt_content.append(f"OWASP Category: {finding.owasp_category or 'N/A'}")
+            txt_content.append(f"CVSS v3 Score: {finding.cvss_v3_base_score or 'N/A'}")
+            txt_content.append(f"First Detected: {finding.first_detected_at.strftime('%Y-%m-%d')}" if finding.first_detected_at else "First Detected: N/A")
+            txt_content.append(f"Last Detected: {finding.last_detected_at.strftime('%Y-%m-%d')}" if finding.last_detected_at else "Last Detected: N/A")
+            txt_content.append(f"\nDescription:\n{finding.description or 'N/A'}")
+            txt_content.append(f"\nSolution:\n{finding.solution or 'N/A'}")
+            txt_content.append("=" * 80)
+            txt_content.append("")
+
+        response = make_response("\n".join(txt_content))
+        filename = f"was_findings_{url_filter}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt" if url_filter else f"was_findings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        response.headers["Content-Type"] = "text/plain"
+        return response
+    except Exception as e:
+        current_app.logger.error(f"Error generating WAS TXT export: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating TXT: {str(e)}", 500
+
+
+@export_bp.route('/export_grouped_findings_csv')
+def export_grouped_findings_csv():
+    """Export grouped findings (by plugin) with enhanced NIST data"""
+    try:
+        findings = VulnerabilityFinding.query.options(
+            subqueryload(VulnerabilityFinding.plugin_compliance_mappings)
+                .subqueryload(PluginComplianceMapping.compliance_requirement)
+        ).all()
+
+        grouped = defaultdict(lambda: {
+            'plugin_name': '',
+            'plugin_id': '',
+            'severity': '',
+            'assets': set(),
+            'vpr_scores': [],
+            'cvss_scores': [],
+            'descriptions': set(),
+            'solutions': set(),
+            'states': set(),
+            'first_found': None,
+            'last_found': None,
+            'grc_mappings': defaultdict(set)
+        })
+
+        for finding in findings:
+            key = finding.plugin_id
+            group = grouped[key]
             
-            if finding.vulnerability_id:
-                content.append(f"Vulnerability ID: {finding.vulnerability_id}")
+            group['plugin_name'] = finding.plugin_name or "N/A"
+            group['plugin_id'] = finding.plugin_id or "N/A"
+            group['severity'] = finding.severity or "N/A"
             
-            content.append(f"Severity: {finding.severity or 'Unknown'}")
-            content.append(f"Status: {finding.status or 'Active'}")
+            if finding.asset_hostname:
+                group['assets'].add(finding.asset_hostname)
             
-            content.append("")
-            content.append("TARGET:")
-            content.append(f"  URL: {finding.target_url or 'N/A'}")
-            
-            if finding.owasp_category:
-                content.append(f"  OWASP Category: {finding.owasp_category}")
-            
+            if finding.vpr_score:
+                group['vpr_scores'].append(finding.vpr_score)
             if finding.cvss_v3_base_score:
-                content.append(f"  CVSS v3 Score: {finding.cvss_v3_base_score}")
-            
-            content.append("")
+                group['cvss_scores'].append(finding.cvss_v3_base_score)
             
             if finding.description:
-                content.append("DESCRIPTION:")
-                desc_text = finding.description
-                if len(desc_text) > 500:
-                    desc_text = desc_text[:500] + "..."
-                content.append(desc_text)
-                content.append("")
-            
+                group['descriptions'].add(finding.description)
             if finding.solution:
-                content.append("SOLUTION:")
-                sol_text = finding.solution
-                if len(sol_text) > 500:
-                    sol_text = sol_text[:500] + "..."
-                content.append(sol_text)
-                content.append("")
+                group['solutions'].add(finding.solution)
+            if finding.state:
+                group['states'].add(finding.state)
+            
+            if finding.first_found:
+                if not group['first_found'] or finding.first_found < group['first_found']:
+                    group['first_found'] = finding.first_found
+            if finding.last_found:
+                if not group['last_found'] or finding.last_found > group['last_found']:
+                    group['last_found'] = finding.last_found
             
             if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
-                content.append("GRC COMPLIANCE IMPACT:")
                 for mapping in finding.plugin_compliance_mappings:
                     if mapping.compliance_requirement:
-                        content.append(f"  • {mapping.compliance_requirement.framework}: "
-                                     f"{mapping.compliance_requirement.requirement_id}")
-                        if mapping.compliance_requirement.description:
-                            desc = mapping.compliance_requirement.description
-                            if len(desc) > 100:
-                                desc = desc[:100] + "..."
-                            content.append(f"    {desc}")
-                content.append("")
-            else:
-                content.append("GRC COMPLIANCE IMPACT: None configured")
-                content.append("")
+                        framework = mapping.compliance_requirement.framework
+                        req_id = mapping.compliance_requirement.requirement_id
+                        group['grc_mappings'][framework].add(req_id)
+
+        csv_buffer = io.StringIO()
+        csv_writer = csv.writer(csv_buffer)
+
+        header = [
+            "Plugin Name", "Plugin ID", "Severity", "Affected Assets Count", 
+            "Affected Assets", "Avg VPR Score", "Avg CVSS Score", 
+            "Description", "Solution", "States", "First Found", "Last Found",
+            "NIST 800-53 Controls", "NIST Control Count", 
+            "PCI DSS Requirements", "SOC 2 Requirements", "GDPR Requirements",
+            "All Frameworks", "Total GRC Requirements"
+        ]
+        csv_writer.writerow(header)
+
+        for plugin_id, group in sorted(grouped.items(), key=lambda x: x[1]['severity']):
+            avg_vpr = sum(group['vpr_scores']) / len(group['vpr_scores']) if group['vpr_scores'] else 0
+            avg_cvss = sum(group['cvss_scores']) / len(group['cvss_scores']) if group['cvss_scores'] else 0
             
-            content.append("TIMELINE:")
-            if finding.first_detected_at:
-                content.append(f"  First Detected: {finding.first_detected_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-            if finding.last_detected_at:
-                content.append(f"  Last Detected: {finding.last_detected_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+            nist_controls = " | ".join(sorted(group['grc_mappings'].get('NIST 800-53', []))) if group['grc_mappings'].get('NIST 800-53') else "N/A"
+            nist_count = len(group['grc_mappings'].get('NIST 800-53', []))
+            pci_reqs = " | ".join(sorted(group['grc_mappings'].get('PCI DSS', []))) if group['grc_mappings'].get('PCI DSS') else "N/A"
+            soc2_reqs = " | ".join(sorted(group['grc_mappings'].get('SOC 2', []))) if group['grc_mappings'].get('SOC 2') else "N/A"
+            gdpr_reqs = " | ".join(sorted(group['grc_mappings'].get('GDPR', []))) if group['grc_mappings'].get('GDPR') else "N/A"
             
-            content.append("")
-            content.append("=" * 80)
-            content.append("")
-        
-        txt_content = "\n".join(content)
-        response = make_response(txt_content)
-        response.headers["Content-Disposition"] = f"attachment; filename=was_findings_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-        response.headers["Content-type"] = "text/plain; charset=utf-8"
+            all_frameworks = []
+            for framework, reqs in group['grc_mappings'].items():
+                all_frameworks.extend([f"{framework}:{req}" for req in sorted(reqs)])
+            all_grc_text = " | ".join(all_frameworks) if all_frameworks else "N/A"
+            total_grc = len(all_frameworks)
+
+            csv_writer.writerow([
+                group['plugin_name'],
+                group['plugin_id'],
+                group['severity'],
+                len(group['assets']),
+                " | ".join(sorted(group['assets'])) if group['assets'] else "N/A",
+                f"{avg_vpr:.2f}",
+                f"{avg_cvss:.2f}",
+                " | ".join(group['descriptions']) if group['descriptions'] else "N/A",
+                " | ".join(group['solutions']) if group['solutions'] else "N/A",
+                " | ".join(group['states']) if group['states'] else "N/A",
+                group['first_found'].strftime("%Y-%m-%d") if group['first_found'] else "N/A",
+                group['last_found'].strftime("%Y-%m-%d") if group['last_found'] else "N/A",
+                nist_controls,
+                nist_count,
+                pci_reqs,
+                soc2_reqs,
+                gdpr_reqs,
+                all_grc_text,
+                total_grc
+            ])
+
+        response = make_response(csv_buffer.getvalue())
+        response.headers["Content-Disposition"] = f"attachment; filename=grouped_findings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        response.headers["Content-Type"] = "text/csv"
         return response
-        
     except Exception as e:
-        current_app.logger.error(f"Error exporting WAS findings: {e}")
-        return f"Error exporting WAS findings: {str(e)}", 500
+        current_app.logger.error(f"Error generating grouped CSV export: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating grouped CSV: {str(e)}", 500
+
+
+@export_bp.route('/export_grouped_findings_txt')
+def export_grouped_findings_txt():
+    """Export grouped findings (by plugin) to TXT format"""
+    try:
+        findings = VulnerabilityFinding.query.options(
+            subqueryload(VulnerabilityFinding.plugin_compliance_mappings)
+                .subqueryload(PluginComplianceMapping.compliance_requirement)
+        ).all()
+
+        grouped = defaultdict(lambda: {
+            'plugin_name': '',
+            'plugin_id': '',
+            'severity': '',
+            'assets': set(),
+            'vpr_scores': [],
+            'cvss_scores': [],
+            'descriptions': set(),
+            'solutions': set(),
+            'states': set(),
+            'first_found': None,
+            'last_found': None,
+            'grc_mappings': defaultdict(set)
+        })
+
+        for finding in findings:
+            key = finding.plugin_id
+            group = grouped[key]
+            
+            group['plugin_name'] = finding.plugin_name or "N/A"
+            group['plugin_id'] = finding.plugin_id or "N/A"
+            group['severity'] = finding.severity or "N/A"
+            
+            if finding.asset_hostname:
+                group['assets'].add(finding.asset_hostname)
+            
+            if finding.vpr_score:
+                group['vpr_scores'].append(finding.vpr_score)
+            if finding.cvss_v3_base_score:
+                group['cvss_scores'].append(finding.cvss_v3_base_score)
+            
+            if finding.description:
+                group['descriptions'].add(finding.description)
+            if finding.solution:
+                group['solutions'].add(finding.solution)
+            if finding.state:
+                group['states'].add(finding.state)
+            
+            if finding.first_found:
+                if not group['first_found'] or finding.first_found < group['first_found']:
+                    group['first_found'] = finding.first_found
+            if finding.last_found:
+                if not group['last_found'] or finding.last_found > group['last_found']:
+                    group['last_found'] = finding.last_found
+            
+            if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
+                for mapping in finding.plugin_compliance_mappings:
+                    if mapping.compliance_requirement:
+                        framework = mapping.compliance_requirement.framework
+                        req_id = mapping.compliance_requirement.requirement_id
+                        group['grc_mappings'][framework].add(req_id)
+
+        txt_content = []
+        txt_content.append("=" * 80)
+        txt_content.append("GROUPED VULNERABILITY FINDINGS EXPORT")
+        txt_content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        txt_content.append(f"Total Unique Findings: {len(grouped)}")
+        txt_content.append("=" * 80)
+        txt_content.append("")
+
+        for i, (plugin_id, group) in enumerate(sorted(grouped.items(), key=lambda x: x[1]['severity']), 1):
+            avg_vpr = sum(group['vpr_scores']) / len(group['vpr_scores']) if group['vpr_scores'] else 0
+            avg_cvss = sum(group['cvss_scores']) / len(group['cvss_scores']) if group['cvss_scores'] else 0
+            
+            txt_content.append(f"GROUPED FINDING #{i}")
+            txt_content.append("-" * 80)
+            txt_content.append(f"Plugin: {group['plugin_name']} (ID: {group['plugin_id']})")
+            txt_content.append(f"Severity: {group['severity']}")
+            txt_content.append(f"Affected Assets: {len(group['assets'])}")
+            txt_content.append(f"Average VPR Score: {avg_vpr:.2f}")
+            txt_content.append(f"Average CVSS Score: {avg_cvss:.2f}")
+            txt_content.append(f"States: {' | '.join(group['states']) if group['states'] else 'N/A'}")
+            txt_content.append(f"First Found: {group['first_found'].strftime('%Y-%m-%d')}" if group['first_found'] else "First Found: N/A")
+            txt_content.append(f"Last Found: {group['last_found'].strftime('%Y-%m-%d')}" if group['last_found'] else "Last Found: N/A")
+            
+            if group['grc_mappings']:
+                txt_content.append("\nCompliance Mappings:")
+                for framework, reqs in sorted(group['grc_mappings'].items()):
+                    txt_content.append(f"  {framework}: {', '.join(sorted(reqs))}")
+            
+            txt_content.append(f"\nAffected Assets:")
+            for asset in sorted(group['assets']):
+                txt_content.append(f"  - {asset}")
+            
+            txt_content.append(f"\nDescription:")
+            for desc in group['descriptions']:
+                txt_content.append(f"  {desc}")
+            
+            txt_content.append(f"\nSolution:")
+            for sol in group['solutions']:
+                txt_content.append(f"  {sol}")
+            
+            txt_content.append("=" * 80)
+            txt_content.append("")
+
+        response = make_response("\n".join(txt_content))
+        response.headers["Content-Disposition"] = f"attachment; filename=grouped_findings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        response.headers["Content-Type"] = "text/plain"
+        return response
+    except Exception as e:
+        current_app.logger.error(f"Error generating grouped TXT export: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating grouped TXT: {str(e)}", 500
+
 
 @export_bp.route('/export_single_grouped_finding_txt/<int:plugin_id>')
 def export_single_grouped_finding_txt(plugin_id):
-    """Export a single grouped finding (all instances of a vulnerability) as TXT with NIST"""
+    """Export a single grouped finding (all findings for a specific plugin_id) as TXT for ticketing"""
     try:
-        findings = db.session.query(VulnerabilityFinding).options(
-            subqueryload(VulnerabilityFinding.plugin_compliance_mappings).subqueryload(
-                PluginComplianceMapping.compliance_requirement
-            )
-        ).filter(
-            VulnerabilityFinding.plugin_id == plugin_id,
-            VulnerabilityFinding.state.in_(['OPEN', 'REOPENED'])
+        # Get all findings for this plugin_id
+        findings = VulnerabilityFinding.query.filter(
+            VulnerabilityFinding.plugin_id == plugin_id
+        ).options(
+            subqueryload(VulnerabilityFinding.plugin_compliance_mappings)
+                .subqueryload(PluginComplianceMapping.compliance_requirement)
         ).all()
         
         if not findings:
             return "No findings found for this plugin", 404
         
+        # Use first finding for vulnerability details
         first_finding = findings[0]
         
-        content = []
-        content.append("=" * 80)
-        content.append("TENABLE GROUPED VULNERABILITY TICKET")
-        content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        content.append("=" * 80)
-        content.append("")
-        
-        content.append("VULNERABILITY DETAILS:")
-        content.append("-" * 40)
-        content.append(f"Plugin Name: {first_finding.plugin_name or 'Unknown'}")
-        content.append(f"Plugin ID: {first_finding.plugin_id}")
-        content.append(f"Severity: {first_finding.severity or 'Unknown'}")
-        
-        if first_finding.vpr_score:
-            content.append(f"VPR Score: {first_finding.vpr_score}")
-        if first_finding.cvss_v3_base_score:
-            content.append(f"CVSS v3 Base Score: {first_finding.cvss_v3_base_score}")
-        
-        content.append("")
-        content.append(f"AFFECTED ASSETS: {len(findings)} total")
-        content.append("-" * 40)
-        
-        for i, finding in enumerate(findings, 1):
-            asset_id = finding.asset_hostname or finding.asset_ipv4 or 'Unknown'
-            content.append(f"{i}. {asset_id}")
-            
-            if finding.asset_aws_ec2_instance_id:
-                content.append(f"   AWS EC2: {finding.asset_aws_ec2_instance_id}")
-            if finding.asset_azure_vm_id:
-                content.append(f"   Azure VM: {finding.asset_azure_vm_id}")
-            if finding.asset_gcp_instance_id:
-                content.append(f"   GCP: {finding.asset_gcp_instance_id}")
-            if finding.asset_os:
-                content.append(f"   OS: {finding.asset_os}")
-        
-        content.append("")
-        
-        if first_finding.description:
-            content.append("DESCRIPTION:")
-            content.append(first_finding.description)
-            content.append("")
-        
-        if first_finding.solution:
-            content.append("REMEDIATION STEPS:")
-            content.append(first_finding.solution)
-            content.append("")
-        
+        # Collect GRC mappings
+        grc_by_framework = defaultdict(set)
         if hasattr(first_finding, 'plugin_compliance_mappings') and first_finding.plugin_compliance_mappings:
-            nist_mappings = []
-            other_mappings = []
-            
             for mapping in first_finding.plugin_compliance_mappings:
                 if mapping.compliance_requirement:
-                    if mapping.compliance_requirement.framework == 'NIST 800-53':
-                        nist_mappings.append(mapping)
-                    else:
-                        other_mappings.append(mapping)
-            
-            if nist_mappings:
-                content.append("NIST 800-53 COMPLIANCE IMPACT:")
-                for mapping in nist_mappings:
-                    content.append(f"  • {mapping.compliance_requirement.requirement_id}")
-                    if mapping.compliance_requirement.description:
-                        desc = mapping.compliance_requirement.description
-                        if len(desc) > 100:
-                            desc = desc[:100] + "..."
-                        content.append(f"    {desc}")
-                content.append("")
-            
-            if other_mappings:
-                content.append("OTHER GRC COMPLIANCE IMPACT:")
-                for mapping in other_mappings:
-                    content.append(f"  • {mapping.compliance_requirement.framework}: "
-                                 f"{mapping.compliance_requirement.requirement_id}")
-                    if mapping.compliance_requirement.description:
-                        desc = mapping.compliance_requirement.description
-                        if len(desc) > 100:
-                            desc = desc[:100] + "..."
-                        content.append(f"    {desc}")
-                content.append("")
-        else:
-            content.append("GRC COMPLIANCE IMPACT: None configured")
-            content.append("")
+                    framework = mapping.compliance_requirement.framework
+                    req_id = mapping.compliance_requirement.requirement_id
+                    grc_by_framework[framework].add(req_id)
         
-        content.append("TIMELINE:")
-        first_dates = [f.first_found for f in findings if f.first_found]
-        last_dates = [f.last_found for f in findings if f.last_found]
+        # Generate TXT content
+        txt_content = []
+        txt_content.append("=" * 80)
+        txt_content.append("VULNERABILITY REPORT - GROUPED FINDING")
+        txt_content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        txt_content.append("=" * 80)
+        txt_content.append("")
+        txt_content.append(f"Plugin ID: {first_finding.plugin_id}")
+        txt_content.append(f"Vulnerability: {first_finding.plugin_name or 'Unknown'}")
+        txt_content.append(f"Severity: {(first_finding.severity or 'unknown').upper()}")
+        txt_content.append(f"VPR Score: {first_finding.vpr_score:.2f}" if first_finding.vpr_score else "VPR Score: N/A")
+        txt_content.append(f"CVSS v3 Score: {first_finding.cvss_v3_base_score:.2f}" if first_finding.cvss_v3_base_score else "CVSS v3 Score: N/A")
+        txt_content.append("")
         
-        if first_dates:
-            content.append(f"  First Found: {min(first_dates).strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        if last_dates:
-            content.append(f"  Last Found: {max(last_dates).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        if grc_by_framework:
+            txt_content.append("COMPLIANCE MAPPINGS:")
+            txt_content.append("-" * 80)
+            for framework, reqs in sorted(grc_by_framework.items()):
+                txt_content.append(f"{framework}: {', '.join(sorted(reqs))}")
+            txt_content.append("")
         
-        content.append("")
-        content.append("=" * 80)
+        txt_content.append(f"AFFECTED ASSETS ({len(findings)}):")
+        txt_content.append("-" * 80)
+        for finding in findings:
+            asset_name = finding.asset_hostname or finding.asset_ipv4 or 'Unknown'
+            txt_content.append(f"  • {asset_name}")
+            if finding.asset_ipv4 and finding.asset_hostname:
+                txt_content.append(f"    IP: {finding.asset_ipv4}")
+            if finding.asset_os:
+                txt_content.append(f"    OS: {finding.asset_os}")
+            if finding.asset_aws_ec2_instance_id:
+                txt_content.append(f"    AWS Instance: {finding.asset_aws_ec2_instance_id}")
+            elif finding.asset_azure_vm_id:
+                txt_content.append(f"    Azure VM: {finding.asset_azure_vm_id}")
+            elif finding.asset_gcp_instance_id:
+                txt_content.append(f"    GCP Instance: {finding.asset_gcp_instance_id}")
+            txt_content.append(f"    State: {finding.state or 'N/A'}")
+            txt_content.append(f"    Last Found: {finding.last_found.strftime('%Y-%m-%d')}" if finding.last_found else "    Last Found: N/A")
+            txt_content.append("")
         
-        txt_content = "\n".join(content)
-        response = make_response(txt_content)
-        response.headers["Content-Disposition"] = f"attachment; filename=grouped_ticket_{plugin_id}.txt"
-        response.headers["Content-type"] = "text/plain; charset=utf-8"
+        txt_content.append("=" * 80)
+        txt_content.append("VULNERABILITY DETAILS")
+        txt_content.append("=" * 80)
+        txt_content.append("")
+        txt_content.append(f"Description:\n{first_finding.description or 'N/A'}")
+        txt_content.append("")
+        txt_content.append(f"Solution:\n{first_finding.solution or 'N/A'}")
+        txt_content.append("")
+        txt_content.append("=" * 80)
+        
+        response = make_response("\n".join(txt_content))
+        response.headers["Content-Disposition"] = f"attachment; filename=grouped_finding_plugin_{plugin_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        response.headers["Content-Type"] = "text/plain"
         return response
-        
     except Exception as e:
-        current_app.logger.error(f"Error exporting grouped finding {plugin_id}: {e}")
-        return f"Error exporting grouped finding: {str(e)}", 500
+        current_app.logger.error(f"Error generating single grouped finding TXT: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating TXT: {str(e)}", 500
+
+
+@export_bp.route('/export_single_grouped_finding_csv/<int:plugin_id>')
+def export_single_grouped_finding_csv(plugin_id):
+    """Export a single grouped finding (all findings for a specific plugin_id) as CSV"""
+    try:
+        # Get all findings for this plugin_id
+        findings = VulnerabilityFinding.query.filter(
+            VulnerabilityFinding.plugin_id == plugin_id
+        ).options(
+            subqueryload(VulnerabilityFinding.plugin_compliance_mappings)
+                .subqueryload(PluginComplianceMapping.compliance_requirement)
+        ).all()
+        
+        if not findings:
+            return "No findings found for this plugin", 404
+        
+        csv_content = generate_csv_content(findings)
+        
+        response = make_response(csv_content)
+        response.headers["Content-Disposition"] = f"attachment; filename=grouped_finding_plugin_{plugin_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        response.headers["Content-Type"] = "text/csv"
+        return response
+    except Exception as e:
+        current_app.logger.error(f"Error generating single grouped finding CSV: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating CSV: {str(e)}", 500
+
+
+@export_bp.route('/export_nist_focused_csv')
+def export_nist_focused_csv():
+    """Export findings with NIST 800-53 mappings only"""
+    try:
+        findings = VulnerabilityFinding.query.options(
+            subqueryload(VulnerabilityFinding.plugin_compliance_mappings)
+                .subqueryload(PluginComplianceMapping.compliance_requirement)
+        ).all()
+
+        # Filter to only findings with NIST mappings
+        nist_findings = []
+        for finding in findings:
+            if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
+                for mapping in finding.plugin_compliance_mappings:
+                    if mapping.compliance_requirement and mapping.compliance_requirement.framework == 'NIST 800-53':
+                        nist_findings.append(finding)
+                        break
+
+        csv_buffer = io.StringIO()
+        csv_writer = csv.writer(csv_buffer)
+
+        header = [
+            "Plugin Name", "Plugin ID", "Asset Hostname", "Asset IPv4", "Severity", 
+            "VPR Score", "CVSSv3 Base Score", "NIST 800-53 Controls", "NIST Control Count",
+            "Description", "Solution", "First Found", "Last Found", "State"
+        ]
+        csv_writer.writerow(header)
+
+        for finding in nist_findings:
+            nist_controls = []
+            if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
+                for mapping in finding.plugin_compliance_mappings:
+                    if mapping.compliance_requirement and mapping.compliance_requirement.framework == 'NIST 800-53':
+                        nist_controls.append(mapping.compliance_requirement.requirement_id)
+
+            nist_text = " | ".join(sorted(nist_controls)) if nist_controls else "N/A"
+            nist_count = len(nist_controls)
+
+            csv_writer.writerow([
+                finding.plugin_name or "N/A",
+                finding.plugin_id or "N/A",
+                finding.asset_hostname or "N/A",
+                finding.asset_ipv4 or "N/A",
+                finding.severity or "N/A",
+                f"{finding.vpr_score:.2f}" if finding.vpr_score else "N/A",
+                f"{finding.cvss_v3_base_score:.2f}" if finding.cvss_v3_base_score else "N/A",
+                nist_text,
+                nist_count,
+                finding.description or "N/A",
+                finding.solution or "N/A",
+                finding.first_found.strftime("%Y-%m-%d") if finding.first_found else "N/A",
+                finding.last_found.strftime("%Y-%m-%d") if finding.last_found else "N/A",
+                finding.state or "N/A"
+            ])
+
+        response = make_response(csv_buffer.getvalue())
+        response.headers["Content-Disposition"] = f"attachment; filename=nist_focused_findings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        response.headers["Content-Type"] = "text/csv"
+        return response
+    except Exception as e:
+        current_app.logger.error(f"Error generating NIST-focused CSV export: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating NIST CSV: {str(e)}", 500
+
+
+@export_bp.route('/export_single_finding_csv/<int:finding_id>')
+def export_single_finding_csv(finding_id):
+    """Export a single vulnerability finding to CSV"""
+    try:
+        finding = VulnerabilityFinding.query.options(
+            subqueryload(VulnerabilityFinding.plugin_compliance_mappings)
+                .subqueryload(PluginComplianceMapping.compliance_requirement)
+        ).get_or_404(finding_id)
+
+        csv_content = generate_csv_content([finding])
+        
+        response = make_response(csv_content)
+        response.headers["Content-Disposition"] = f"attachment; filename=finding_{finding_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        response.headers["Content-Type"] = "text/csv"
+        return response
+    except Exception as e:
+        current_app.logger.error(f"Error generating single finding CSV: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating CSV: {str(e)}", 500
+
+
+@export_bp.route('/export_single_finding_txt/<int:finding_id>')
+def export_single_finding_txt(finding_id):
+    """Export a single vulnerability finding to TXT format"""
+    try:
+        finding = VulnerabilityFinding.query.options(
+            subqueryload(VulnerabilityFinding.plugin_compliance_mappings)
+                .subqueryload(PluginComplianceMapping.compliance_requirement)
+        ).get_or_404(finding_id)
+
+        txt_content = []
+        txt_content.append("=" * 80)
+        txt_content.append("VULNERABILITY FINDING DETAILS")
+        txt_content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        txt_content.append("=" * 80)
+        txt_content.append("")
+        txt_content.append(f"Plugin: {finding.plugin_name or 'N/A'} (ID: {finding.plugin_id or 'N/A'})")
+        txt_content.append(f"Asset: {finding.asset_hostname or 'N/A'} ({finding.asset_ipv4 or 'N/A'})")
+        txt_content.append(f"Severity: {finding.severity or 'N/A'}")
+        txt_content.append(f"VPR Score: {finding.vpr_score:.2f}" if finding.vpr_score else "VPR Score: N/A")
+        txt_content.append(f"CVSS Base Score: {finding.cvss_v3_base_score:.2f}" if finding.cvss_v3_base_score else "CVSS Base Score: N/A")
+        txt_content.append(f"State: {finding.state or 'N/A'}")
+        txt_content.append(f"First Found: {finding.first_found.strftime('%Y-%m-%d')}" if finding.first_found else "First Found: N/A")
+        txt_content.append(f"Last Found: {finding.last_found.strftime('%Y-%m-%d')}" if finding.last_found else "Last Found: N/A")
+        
+        if finding.is_in_attack_path:
+            txt_content.append(f"Attack Path Score: {finding.attack_path_score:.2f}" if finding.attack_path_score else "Attack Path Score: N/A")
+        
+        grc_by_framework = defaultdict(list)
+        if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
+            for mapping in finding.plugin_compliance_mappings:
+                if mapping.compliance_requirement:
+                    framework = mapping.compliance_requirement.framework
+                    req_id = mapping.compliance_requirement.requirement_id
+                    grc_by_framework[framework].append(req_id)
+        
+        if grc_by_framework:
+            txt_content.append("\nCompliance Mappings:")
+            for framework, reqs in sorted(grc_by_framework.items()):
+                txt_content.append(f"  {framework}: {', '.join(reqs)}")
+        
+        txt_content.append(f"\nDescription:\n{finding.description or 'N/A'}")
+        txt_content.append(f"\nSolution:\n{finding.solution or 'N/A'}")
+        txt_content.append("=" * 80)
+
+        response = make_response("\n".join(txt_content))
+        response.headers["Content-Disposition"] = f"attachment; filename=finding_{finding_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        response.headers["Content-Type"] = "text/plain"
+        return response
+    except Exception as e:
+        current_app.logger.error(f"Error generating single finding TXT: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating TXT: {str(e)}", 500
+
+
+@export_bp.route('/export_single_was_finding_csv/<int:finding_id>')
+def export_single_was_finding_csv(finding_id):
+    """Export a single WAS finding to CSV"""
+    try:
+        finding = WASFinding.query.get_or_404(finding_id)
+
+        csv_buffer = io.StringIO()
+        csv_writer = csv.writer(csv_buffer)
+
+        header = [
+            "Vulnerability Name", "Vulnerability ID", "Target URL", "Severity", "Status",
+            "OWASP Category", "CVSS v3 Score", "Description", "Solution", 
+            "First Detected", "Last Detected"
+        ]
+        csv_writer.writerow(header)
+
+        csv_writer.writerow([
+            finding.vulnerability_name or "N/A",
+            finding.vulnerability_id or "N/A",
+            finding.target_url or "N/A",
+            finding.severity or "N/A",
+            finding.status or "N/A",
+            finding.owasp_category or "N/A",
+            finding.cvss_v3_base_score or "N/A",
+            finding.description or "N/A",
+            finding.solution or "N/A",
+            finding.first_detected_at.strftime("%Y-%m-%d") if finding.first_detected_at else "N/A",
+            finding.last_detected_at.strftime("%Y-%m-%d") if finding.last_detected_at else "N/A"
+        ])
+
+        response = make_response(csv_buffer.getvalue())
+        response.headers["Content-Disposition"] = f"attachment; filename=was_finding_{finding_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        response.headers["Content-Type"] = "text/csv"
+        return response
+    except Exception as e:
+        current_app.logger.error(f"Error generating single WAS finding CSV: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating CSV: {str(e)}", 500
+
 
 @export_bp.route('/export_single_was_finding_txt/<int:finding_id>')
 def export_single_was_finding_txt(finding_id):
-    """Export a single WAS finding as TXT for tickets"""
+    """Export a single WAS finding to TXT format"""
     try:
-        finding = db.session.query(WASFinding).options(
-            subqueryload(WASFinding.plugin_compliance_mappings).subqueryload(
-                PluginComplianceMapping.compliance_requirement
-            )
-        ).filter_by(id=finding_id).first()
-        
-        if not finding:
-            return "WAS Finding not found", 404
-        
-        content = []
-        content.append("=" * 80)
-        content.append("WEB APPLICATION SECURITY FINDING - TICKET")
-        content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        content.append("=" * 80)
-        content.append("")
-        
-        content.append("VULNERABILITY DETAILS:")
-        content.append("-" * 40)
-        content.append(f"Finding ID: {finding.id}")
-        content.append(f"Vulnerability Name: {finding.vulnerability_name or 'Unknown'}")
-        
-        if finding.vulnerability_id:
-            content.append(f"Vulnerability ID: {finding.vulnerability_id}")
-        
-        content.append(f"Severity: {finding.severity or 'Unknown'}")
-        content.append(f"Status: {finding.status or 'Active'}")
-        
-        content.append("")
-        content.append("TARGET INFORMATION:")
-        content.append(f"  URL: {finding.target_url or 'N/A'}")
-        
-        if finding.owasp_category:
-            content.append(f"  OWASP Category: {finding.owasp_category}")
-        
-        if finding.cvss_v3_base_score:
-            content.append(f"  CVSS v3 Score: {finding.cvss_v3_base_score}")
-        
-        content.append("")
-        
-        if finding.description:
-            content.append("DESCRIPTION:")
-            content.append(finding.description)
-            content.append("")
-        
-        if finding.solution:
-            content.append("REMEDIATION STEPS:")
-            content.append(finding.solution)
-            content.append("")
-        
-        if hasattr(finding, 'plugin_compliance_mappings') and finding.plugin_compliance_mappings:
-            content.append("GRC COMPLIANCE IMPACT:")
-            for mapping in finding.plugin_compliance_mappings:
-                if mapping.compliance_requirement:
-                    content.append(f"  • {mapping.compliance_requirement.framework}: "
-                                 f"{mapping.compliance_requirement.requirement_id}")
-                    if mapping.compliance_requirement.description:
-                        desc = mapping.compliance_requirement.description
-                        if len(desc) > 100:
-                            desc = desc[:100] + "..."
-                        content.append(f"    {desc}")
-            content.append("")
-        else:
-            content.append("GRC COMPLIANCE IMPACT: None configured")
-            content.append("")
-        
-        content.append("TIMELINE:")
-        if finding.first_detected_at:
-            content.append(f"  First Detected: {finding.first_detected_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        if finding.last_detected_at:
-            content.append(f"  Last Detected: {finding.last_detected_at.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        
-        content.append("")
-        content.append("=" * 80)
-        
-        txt_content = "\n".join(content)
-        response = make_response(txt_content)
-        response.headers["Content-Disposition"] = f"attachment; filename=was_ticket_{finding.id}.txt"
-        response.headers["Content-type"] = "text/plain; charset=utf-8"
+        finding = WASFinding.query.get_or_404(finding_id)
+
+        txt_content = []
+        txt_content.append("=" * 80)
+        txt_content.append("WEB APPLICATION SECURITY (WAS) FINDING DETAILS")
+        txt_content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        txt_content.append("=" * 80)
+        txt_content.append("")
+        txt_content.append(f"Vulnerability: {finding.vulnerability_name or 'N/A'} (ID: {finding.vulnerability_id or 'N/A'})")
+        txt_content.append(f"Target URL: {finding.target_url or 'N/A'}")
+        txt_content.append(f"Severity: {finding.severity or 'N/A'}")
+        txt_content.append(f"Status: {finding.status or 'N/A'}")
+        txt_content.append(f"OWASP Category: {finding.owasp_category or 'N/A'}")
+        txt_content.append(f"CVSS v3 Score: {finding.cvss_v3_base_score or 'N/A'}")
+        txt_content.append(f"First Detected: {finding.first_detected_at.strftime('%Y-%m-%d')}" if finding.first_detected_at else "First Detected: N/A")
+        txt_content.append(f"Last Detected: {finding.last_detected_at.strftime('%Y-%m-%d')}" if finding.last_detected_at else "Last Detected: N/A")
+        txt_content.append(f"\nDescription:\n{finding.description or 'N/A'}")
+        txt_content.append(f"\nSolution:\n{finding.solution or 'N/A'}")
+        txt_content.append("=" * 80)
+
+        response = make_response("\n".join(txt_content))
+        response.headers["Content-Disposition"] = f"attachment; filename=was_finding_{finding_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        response.headers["Content-Type"] = "text/plain"
         return response
-        
     except Exception as e:
-        current_app.logger.error(f"Error exporting WAS finding {finding_id}: {e}")
-        return f"Error exporting WAS finding: {str(e)}", 500
+        current_app.logger.error(f"Error generating single WAS finding TXT: {str(e)}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error generating TXT: {str(e)}", 500
