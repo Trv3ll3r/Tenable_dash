@@ -2,6 +2,48 @@
 
 {% block title %}WAS Findings - Tenable Dashboard{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* Force proper table cell rendering */
+    .table-container {
+        background: #ffffff !important;
+        color: #2c3e50 !important;
+    }
+    .table-container table {
+        table-layout: auto;
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+    .table-container table td,
+    .table-container table th {
+        vertical-align: middle !important;
+        padding: 12px 8px !important;
+        border-bottom: 1px solid #dee2e6 !important;
+        background-color: #ffffff !important;
+        color: #2c3e50 !important;
+    }
+    .table-container table tbody tr {
+        background-color: #ffffff !important;
+    }
+    .table-container table tbody tr:hover {
+        background-color: #f8f9fa !important;
+    }
+    /* Ensure modals render on dark background */
+    .modal-content {
+        background-color: #ffffff !important;
+        color: #2c3e50 !important;
+    }
+    /* Fix text color in table */
+    .table-container a {
+        color: #3498db !important;
+    }
+    .table-container .text-muted {
+        color: #6c757d !important;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <!-- Navigation Tabs -->
 <ul class="nav nav-tabs mb-3" id="dashboardTabs" role="tablist">
@@ -55,13 +97,15 @@
         </div>
 
         <div class="form-group mr-3">
-            <label for="domain" class="mr-2 text-white">
-                <i class="fas fa-globe-americas"></i> Domain:
+            <label for="subdomain" class="mr-2 text-white">
+                <i class="fas fa-globe"></i> Domain/URL:
             </label>
-            <select name="domain" id="domain" class="form-control form-control-sm" style="max-width: 300px;">
-                <option value="all" {% if selected_domain == 'all' or not selected_domain %}selected{% endif %}>All Domains</option>
-                {% for domain in available_domains %}
-                <option value="{{ domain }}" {% if selected_domain == domain %}selected{% endif %}>{{ domain }}</option>
+            <select name="subdomain" id="subdomain" class="form-control form-control-sm">
+                <option value="all" {% if selected_subdomain == 'all' or not selected_subdomain %}selected{% endif %}>All Domains</option>
+                {% for subdomain in available_subdomains %}
+                <option value="{{ subdomain }}" {% if selected_subdomain == subdomain %}selected{% endif %}>
+                    {{ subdomain }}
+                </option>
                 {% endfor %}
             </select>
         </div>
@@ -70,12 +114,16 @@
             <button type="submit" class="btn btn-primary btn-sm">
                 <i class="fas fa-filter"></i> Apply Filters
             </button>
-            <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary btn-sm ml-2">
-                <i class="fas fa-server"></i> VM Findings
+            <a href="{{ url_for('main.was_findings') }}" class="btn btn-secondary btn-sm ml-2">
+                <i class="fas fa-redo"></i> Reset
             </a>
-            <a href="{{ url_for('export.export_was_findings_txt') }}?severity={{ selected_severity }}&status={{ selected_status }}&tld={{ selected_tld }}" 
+            <a href="{{ url_for('export.export_was_findings_csv') }}?severity={{ selected_severity }}&status={{ selected_status }}&subdomain={{ selected_subdomain }}" 
                class="btn btn-success btn-sm ml-2">
-                <i class="fas fa-file-alt"></i> Export All TXT
+                <i class="fas fa-file-csv"></i> Export CSV
+            </a>
+            <a href="{{ url_for('export.export_was_findings_txt') }}?severity={{ selected_severity }}&status={{ selected_status }}&subdomain={{ selected_subdomain }}" 
+               class="btn btn-success btn-sm ml-2">
+                <i class="fas fa-file-alt"></i> Export TXT
             </a>
         </div>
     </form>
@@ -97,25 +145,17 @@
 {% else %}
 <div class="alert alert-success">
     <i class="fas fa-check-circle"></i> 
-    <strong>Showing {{ was_findings|length }} WAS findings</strong> with current filters.
-    {% if selected_tld and selected_tld != 'all' %}
-    <br><small class="text-white"><i class="fas fa-filter"></i> Filtered to TLD: <strong>{{ selected_tld }}</strong></small>
+    <strong>Showing {{ was_findings|length }} WAS findings</strong>
+    {% if selected_subdomain != 'all' %}
+    for domain/URL <strong>{{ selected_subdomain }}</strong>
+    {% endif %}
+    {% if selected_severity != 'all' %}
+    with <strong>{{ selected_severity|upper }}</strong> severity
+    {% endif %}
+    {% if selected_status != 'all' %}
+    (Status: <strong>{{ selected_status|capitalize }}</strong>)
     {% endif %}
     <br><small class="text-muted"><i class="fas fa-file-alt"></i> Click "TXT" button to download individual tickets with GRC compliance mappings.</small>
-</div>
-{% endif %}
-
-<!-- TLD Distribution Summary -->
-{% if tld_summary and tld_summary|length > 0 %}
-<div class="alert alert-info">
-    <h6><i class="fas fa-chart-pie"></i> Domain Distribution Summary</h6>
-    <div class="row">
-        {% for tld, count in tld_summary.items() %}
-        <div class="col-md-2 col-sm-4 col-6 mb-2">
-            <strong>{{ tld }}:</strong> <span class="badge badge-primary">{{ count }}</span>
-        </div>
-        {% endfor %}
-    </div>
 </div>
 {% endif %}
 
@@ -124,21 +164,26 @@
     <table class="table table-hover table-sm">
         <thead>
             <tr>
+                <th><i class="fas fa-exclamation-triangle"></i> Severity</th>
                 <th><i class="fas fa-bug"></i> Vulnerability Name</th>
                 <th><i class="fas fa-link"></i> Target URL</th>
-                <th><i class="fas fa-globe-americas"></i> TLD</th>
-                <th><i class="fas fa-exclamation-triangle"></i> Severity</th>
-                <th><i class="fas fa-shield-alt"></i> OWASP Category</th>
-                <th><i class="fas fa-tachometer-alt"></i> CVSS Score</th>
-                <th><i class="fas fa-calendar-alt"></i> Last Detected</th>
+                <th><i class="fas fa-shield-alt"></i> OWASP</th>
                 <th><i class="fas fa-check-circle"></i> Status</th>
-                <th><i class="fas fa-info-circle"></i> Description</th>
+                <th><i class="fas fa-calendar-alt"></i> Last Detected</th>
+                <th><i class="fas fa-shield-alt"></i> GRC</th>
                 <th><i class="fas fa-download"></i> Export</th>
             </tr>
         </thead>
         <tbody>
             {% for finding in was_findings %}
             <tr>
+                <td>
+                    {% if finding.severity %}
+                        <span class="badge badge-{{ finding.severity|lower }}">{{ finding.severity|upper }}</span>
+                    {% else %}
+                        <span class="badge badge-secondary">UNKNOWN</span>
+                    {% endif %}
+                </td>
                 <td>
                     <strong>{{ finding.vulnerability_name or 'Unknown Vulnerability' }}</strong>
                     {% if finding.vulnerability_id %}
@@ -148,25 +193,12 @@
                 <td>
                     {% if finding.target_url %}
                         <a href="{{ finding.target_url }}" target="_blank" rel="noopener noreferrer" 
-                           style="word-break: break-all; font-size: 0.8em;">
-                            {{ finding.target_url[:50] }}{% if finding.target_url|length > 50 %}...{% endif %}
+                           style="word-break: break-all; font-size: 0.85em;" 
+                           title="{{ finding.target_url }}">
+                            {{ finding.target_url[:60] }}{% if finding.target_url|length > 60 %}...{% endif %}
                         </a>
                     {% else %}
                         <span class="text-muted">N/A</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if finding.tld %}
-                        <span class="badge badge-secondary">{{ finding.tld }}</span>
-                    {% else %}
-                        <span class="text-muted">N/A</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if finding.severity %}
-                        <span class="badge badge-{{ finding.severity|lower }}">{{ finding.severity|upper }}</span>
-                    {% else %}
-                        <span class="badge badge-secondary">UNKNOWN</span>
                     {% endif %}
                 </td>
                 <td>
@@ -177,16 +209,6 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if finding.cvss_v3_base_score %}
-                        <span class="badge badge-warning">{{ finding.cvss_v3_base_score }}</span>
-                    {% else %}
-                        <span class="text-muted">N/A</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {{ finding.last_detected_at.strftime('%Y-%m-%d') if finding.last_detected_at else 'N/A' }}
-                </td>
-                <td>
                     {% if finding.status == 'Fixed' %}
                         <span class="badge badge-success">FIXED</span>
                     {% else %}
@@ -194,21 +216,32 @@
                     {% endif %}
                 </td>
                 <td>
-                    <div style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;" 
-                         title="{{ finding.description or 'No description available' }}">
-                        {{ (finding.description or 'No description available')[:100] }}{% if finding.description and finding.description|length > 100 %}...{% endif %}
-                    </div>
+                    {{ finding.last_detected_at.strftime('%Y-%m-%d') if finding.last_detected_at else 'N/A' }}
+                </td>
+                <td class="text-center">
+                    {% if finding.plugin_compliance_mappings and finding.plugin_compliance_mappings|length > 0 %}
+                        <i class="fas fa-shield-alt text-success" 
+                           title="{{ finding.plugin_compliance_mappings|length }} GRC mapping(s)" 
+                           data-toggle="tooltip"></i>
+                    {% else %}
+                        <i class="fas fa-minus text-muted" 
+                           title="No GRC mappings" 
+                           data-toggle="tooltip"></i>
+                    {% endif %}
                 </td>
                 <td>
+                    <button class="btn btn-sm btn-info" data-toggle="modal" data-target="#detailModal{{ finding.id }}">
+                        <i class="fas fa-info-circle"></i>
+                    </button>
                     <a href="{{ url_for('export.export_single_was_finding_txt', finding_id=finding.id) }}" 
                        class="btn btn-sm btn-success" title="Export as TXT for ticket">
-                        <i class="fas fa-file-alt"></i> TXT
+                        <i class="fas fa-file-alt"></i>
                     </a>
                 </td>
             </tr>
             {% else %}
             <tr>
-                <td colspan="10" class="text-center">
+                <td colspan="8" class="text-center">
                     <i class="fas fa-search"></i> No WAS findings found.
                     <br><br>
                     <div class="alert alert-info d-inline-block text-left" style="max-width: 500px;">
@@ -217,7 +250,154 @@
                             <li>Verify WAS scans are configured and running</li>
                             <li>Check if WAS module is licensed in your Tenable subscription</li>
                             <li>Ensure web applications have been scanned recently</li>
-                            <li>Try running data ingestion: <code>python run.py</code></li>
+                            <li>Try adjusting your filters or <a href="{{ url_for('main.was_findings') }}">reset all filters</a></li>
+                        </ol>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Modals - Outside the table -->
+{% for finding in was_findings %}
+            <div class="modal fade" id="detailModal{{ finding.id }}" tabindex="-1" role="dialog">
+                <div class="modal-dialog modal-lg" role="document">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">{{ finding.vulnerability_name or 'WAS Finding Details' }}</h5>
+                            <button type="button" class="close" data-dismiss="modal">
+                                <span>&times;</span>
+                            </button>
+                        </div>
+                        <div class="modal-body">
+                            <h6>Target Information</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <th width="30%">Target URL:</th>
+                                    <td style="word-break: break-all;"><code>{{ finding.target_url or 'N/A' }}</code></td>
+                                </tr>
+                                <tr>
+                                    <th>Vulnerability ID:</th>
+                                    <td>{{ finding.vulnerability_id or 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <th>OWASP Category:</th>
+                                    <td>
+                                        {% if finding.owasp_category %}
+                                            <span class="badge badge-info">{{ finding.owasp_category }}</span>
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Severity:</th>
+                                    <td>
+                                        {% if finding.severity == 'critical' %}
+                                            <span class="badge badge-danger">CRITICAL</span>
+                                        {% elif finding.severity == 'high' %}
+                                            <span class="badge badge-warning">HIGH</span>
+                                        {% elif finding.severity == 'medium' %}
+                                            <span class="badge badge-info">MEDIUM</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">{{ finding.severity|upper }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>CVSS v3 Score:</th>
+                                    <td>{{ finding.cvss_v3_base_score or 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Status:</th>
+                                    <td>
+                                        {% if finding.status == 'Active' %}
+                                            <span class="badge badge-danger">Active</span>
+                                        {% elif finding.status == 'Fixed' %}
+                                            <span class="badge badge-success">Fixed</span>
+                                        {% else %}
+                                            <span class="badge badge-secondary">{{ finding.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </table>
+
+                            {% if finding.description %}
+                            <h6 class="mt-3">Description</h6>
+                            <div class="alert alert-light">
+                                {{ finding.description }}
+                            </div>
+                            {% endif %}
+
+                            {% if finding.solution %}
+                            <h6 class="mt-3">Solution</h6>
+                            <div class="alert alert-success">
+                                {{ finding.solution }}
+                            </div>
+                            {% endif %}
+
+                            {% if finding.plugin_compliance_mappings %}
+                            <h6 class="mt-3">GRC Compliance Mappings</h6>
+                            <table class="table table-sm table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>Framework</th>
+                                        <th>Requirement ID</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for mapping in finding.plugin_compliance_mappings %}
+                                        {% if mapping.compliance_requirement %}
+                                        <tr>
+                                            <td><span class="badge badge-primary">{{ mapping.compliance_requirement.framework }}</span></td>
+                                            <td>{{ mapping.compliance_requirement.requirement_id }}</td>
+                                            <td><small>{{ mapping.compliance_requirement.description }}</small></td>
+                                        </tr>
+                                        {% endif %}
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                            {% endif %}
+
+                            <h6 class="mt-3">Timeline</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <th width="30%">First Detected:</th>
+                                    <td>{{ finding.first_detected_at.strftime('%Y-%m-%d %H:%M') if finding.first_detected_at else 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Last Detected:</th>
+                                    <td>{{ finding.last_detected_at.strftime('%Y-%m-%d %H:%M') if finding.last_detected_at else 'N/A' }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="modal-footer">
+                            <a href="{{ url_for('export.export_single_was_finding_csv', finding_id=finding.id) }}" class="btn btn-success btn-sm">
+                                <i class="fas fa-download"></i> Export CSV
+                            </a>
+                            <a href="{{ url_for('export.export_single_was_finding_txt', finding_id=finding.id) }}" class="btn btn-info btn-sm">
+                                <i class="fas fa-file-alt"></i> Export TXT
+                            </a>
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <tr>
+                <td colspan="8" class="text-center">
+                    <i class="fas fa-search"></i> No WAS findings found.
+                    <br><br>
+                    <div class="alert alert-info d-inline-block text-left" style="max-width: 500px;">
+                        <strong>Troubleshooting WAS Data:</strong>
+                        <ol class="mb-0 mt-2">
+                            <li>Verify WAS scans are configured and running</li>
+                            <li>Check if WAS module is licensed in your Tenable subscription</li>
+                            <li>Ensure web applications have been scanned recently</li>
+                            <li>Try adjusting your filters or <a href="{{ url_for('main.was_findings') }}">reset all filters</a></li>
                         </ol>
                     </div>
                 </td>
@@ -231,17 +411,14 @@
 <div class="alert alert-secondary mt-4">
     <h6><i class="fas fa-info-circle"></i> WAS Integration Status</h6>
     <div class="row">
-        <div class="col-md-3">
+        <div class="col-md-4">
             <strong>WAS Findings in DB:</strong> {{ was_findings|length }}
         </div>
-        <div class="col-md-3">
-            <strong>Unique TLDs:</strong> {{ available_tlds|length if available_tlds else 0 }}
-        </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <strong>Feature Flag:</strong> 
             <span class="badge badge-success">Enabled</span>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <strong>Last Updated:</strong> During last data ingestion
         </div>
     </div>
@@ -252,9 +429,9 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Add tooltips
+    // Enable Bootstrap tooltips
     if (typeof $ !== 'undefined' && $.fn.tooltip) {
-        $('[title]').tooltip();
+        $('[data-toggle="tooltip"]').tooltip();
     }
     
     // Add click-to-copy for URLs
@@ -264,17 +441,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Allow normal click with Ctrl/Cmd
                 return true;
             }
-            // Copy URL on regular click
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(this.href);
-                this.style.backgroundColor = '#28a745';
-                this.style.color = 'white';
-                setTimeout(() => {
-                    this.style.backgroundColor = '';
-                    this.style.color = '';
-                }, 1000);
-            }
-            e.preventDefault();
         });
     });
 });
