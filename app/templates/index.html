@@ -1,448 +1,432 @@
-{% extends "base.html" %}
+"""
+Tenable API Client - Clean implementation with pytenable 1.8.4 support
+Supports both Tenable.io and Ermetic endpoints
+Fixed to use Tenable.io for vulnerability/WAS data and Ermetic for cloud data
+"""
 
-{% block title %}WAS Findings - Tenable Dashboard{% endblock %}
+import os
+import requests
+from datetime import datetime, timedelta, timezone
+from tenable.io import TenableIO
+from flask import current_app
 
-{% block extra_css %}
-<style>
-    /* Force proper table cell rendering */
-    .table-container {
-        background: #ffffff !important;
-        color: #2c3e50 !important;
-    }
-    .table-container table {
-        table-layout: auto;
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
-    }
-    .table-container table td,
-    .table-container table th {
-        vertical-align: middle !important;
-        padding: 12px 8px !important;
-        border-bottom: 1px solid #dee2e6 !important;
-        background-color: #ffffff !important;
-        color: #2c3e50 !important;
-    }
-    .table-container table tbody tr {
-        background-color: #ffffff !important;
-    }
-    .table-container table tbody tr:hover {
-        background-color: #f8f9fa !important;
-    }
-    /* Ensure modals render on dark background */
-    .modal-content {
-        background-color: #ffffff !important;
-        color: #2c3e50 !important;
-    }
-    /* Fix text color in table */
-    .table-container a {
-        color: #3498db !important;
-    }
-    .table-container .text-muted {
-        color: #6c757d !important;
-    }
-</style>
-{% endblock %}
 
-{% block content %}
-<!-- Navigation Tabs -->
-<ul class="nav nav-tabs mb-3" id="dashboardTabs" role="tablist">
-    <li class="nav-item">
-        <a class="nav-link" href="{{ url_for('main.dashboard') }}">
-            <i class="fas fa-bug"></i> Vulnerabilities
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="{{ url_for('main.grouped_findings') }}">
-            <i class="fas fa-layer-group"></i> Grouped View
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link active">
-            <i class="fas fa-globe"></i> Web App Security ({{ was_findings|length }})
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="{{ url_for('main.cloud_findings') }}">
-            <i class="fas fa-cloud"></i> Cloud Security
-        </a>
-    </li>
-</ul>
-
-<!-- Control Panel -->
-<div class="control-panel">
-    <form method="GET" class="form-inline justify-content-between">
-        <div class="form-group mr-3">
-            <label for="severity" class="mr-2 text-white">
-                <i class="fas fa-exclamation-triangle"></i> Severity:
-            </label>
-            <select name="severity" id="severity" class="form-control form-control-sm">
-                <option value="all" {% if selected_severity == 'all' or not selected_severity %}selected{% endif %}>All Severities</option>
-                <option value="critical" {% if selected_severity == 'critical' %}selected{% endif %}>Critical Only</option>
-                <option value="high" {% if selected_severity == 'high' %}selected{% endif %}>High Only</option>
-                <option value="medium" {% if selected_severity == 'medium' %}selected{% endif %}>Medium Only</option>
-                <option value="low" {% if selected_severity == 'low' %}selected{% endif %}>Low Only</option>
-            </select>
-        </div>
-
-        <div class="form-group mr-3">
-            <label for="status" class="mr-2 text-white">
-                <i class="fas fa-check-circle"></i> Status:
-            </label>
-            <select name="status" id="status" class="form-control form-control-sm">
-                <option value="active" {% if selected_status == 'active' or not selected_status %}selected{% endif %}>Active</option>
-                <option value="fixed" {% if selected_status == 'fixed' %}selected{% endif %}>Fixed</option>
-                <option value="all" {% if selected_status == 'all' %}selected{% endif %}>All</option>
-            </select>
-        </div>
-
-        <div class="form-group mr-3">
-            <label for="subdomain" class="mr-2 text-white">
-                <i class="fas fa-globe"></i> Domain/URL:
-            </label>
-            <select name="subdomain" id="subdomain" class="form-control form-control-sm">
-                <option value="all" {% if selected_subdomain == 'all' or not selected_subdomain %}selected{% endif %}>All Domains</option>
-                {% for subdomain in available_subdomains %}
-                <option value="{{ subdomain }}" {% if selected_subdomain == subdomain %}selected{% endif %}>
-                    {{ subdomain }}
-                </option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div>
-            <button type="submit" class="btn btn-primary btn-sm">
-                <i class="fas fa-filter"></i> Apply Filters
-            </button>
-            <a href="{{ url_for('main.was_findings') }}" class="btn btn-secondary btn-sm ml-2">
-                <i class="fas fa-redo"></i> Reset
-            </a>
-            <a href="{{ url_for('export.export_was_findings_csv') }}?severity={{ selected_severity }}&status={{ selected_status }}&subdomain={{ selected_subdomain }}" 
-               class="btn btn-success btn-sm ml-2">
-                <i class="fas fa-file-csv"></i> Export CSV
-            </a>
-            <a href="{{ url_for('export.export_was_findings_txt') }}?severity={{ selected_severity }}&status={{ selected_status }}&subdomain={{ selected_subdomain }}" 
-               class="btn btn-success btn-sm ml-2">
-                <i class="fas fa-file-alt"></i> Export TXT
-            </a>
-        </div>
-    </form>
-</div>
-
-<!-- WAS Summary -->
-{% if was_findings|length == 0 %}
-<div class="alert alert-warning">
-    <i class="fas fa-exclamation-triangle"></i> 
-    <strong>No WAS findings available.</strong> 
-    <br>This could mean:
-    <ul class="mb-0 mt-2">
-        <li>No WAS scans have been completed</li>
-        <li>WAS module requires additional licensing</li>
-        <li>WAS findings are filtered out by current settings</li>
-        <li>WAS API integration needs configuration</li>
-    </ul>
-</div>
-{% else %}
-<div class="alert alert-success">
-    <i class="fas fa-check-circle"></i> 
-    <strong>Showing {{ was_findings|length }} WAS findings</strong>
-    {% if selected_subdomain != 'all' %}
-    for domain/URL <strong>{{ selected_subdomain }}</strong>
-    {% endif %}
-    {% if selected_severity != 'all' %}
-    with <strong>{{ selected_severity|upper }}</strong> severity
-    {% endif %}
-    {% if selected_status != 'all' %}
-    (Status: <strong>{{ selected_status|capitalize }}</strong>)
-    {% endif %}
-    <br><small class="text-muted"><i class="fas fa-file-alt"></i> Click "TXT" button to download individual tickets with GRC compliance mappings.</small>
-</div>
-{% endif %}
-
-<!-- WAS Findings Table -->
-<div class="table-container">
-    <table class="table table-hover table-sm">
-        <thead>
-            <tr>
-                <th><i class="fas fa-exclamation-triangle"></i> Severity</th>
-                <th><i class="fas fa-bug"></i> Vulnerability Name</th>
-                <th><i class="fas fa-link"></i> Target URL</th>
-                <th><i class="fas fa-shield-alt"></i> OWASP</th>
-                <th><i class="fas fa-check-circle"></i> Status</th>
-                <th><i class="fas fa-calendar-alt"></i> Last Detected</th>
-                <th><i class="fas fa-shield-alt"></i> GRC</th>
-                <th><i class="fas fa-download"></i> Export</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for finding in was_findings %}
-            <tr>
-                <td>
-                    {% if finding.severity %}
-                        <span class="badge badge-{{ finding.severity|lower }}">{{ finding.severity|upper }}</span>
-                    {% else %}
-                        <span class="badge badge-secondary">UNKNOWN</span>
-                    {% endif %}
-                </td>
-                <td>
-                    <strong>{{ finding.vulnerability_name or 'Unknown Vulnerability' }}</strong>
-                    {% if finding.vulnerability_id %}
-                        <br><small class="text-muted">ID: {{ finding.vulnerability_id }}</small>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if finding.target_url %}
-                        <a href="{{ finding.target_url }}" target="_blank" rel="noopener noreferrer" 
-                           style="word-break: break-all; font-size: 0.85em;" 
-                           title="{{ finding.target_url }}">
-                            {{ finding.target_url[:60] }}{% if finding.target_url|length > 60 %}...{% endif %}
-                        </a>
-                    {% else %}
-                        <span class="text-muted">N/A</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if finding.owasp_category %}
-                        <span class="badge badge-info">{{ finding.owasp_category }}</span>
-                    {% else %}
-                        <span class="text-muted">N/A</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if finding.status == 'Fixed' %}
-                        <span class="badge badge-success">FIXED</span>
-                    {% else %}
-                        <span class="badge badge-danger">{{ finding.status or 'ACTIVE' }}</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {{ finding.last_detected_at.strftime('%Y-%m-%d') if finding.last_detected_at else 'N/A' }}
-                </td>
-                <td class="text-center">
-                    {% if finding.plugin_compliance_mappings and finding.plugin_compliance_mappings|length > 0 %}
-                        <i class="fas fa-shield-alt text-success" 
-                           title="{{ finding.plugin_compliance_mappings|length }} GRC mapping(s)" 
-                           data-toggle="tooltip"></i>
-                    {% else %}
-                        <i class="fas fa-minus text-muted" 
-                           title="No GRC mappings" 
-                           data-toggle="tooltip"></i>
-                    {% endif %}
-                </td>
-                <td>
-                    <button class="btn btn-sm btn-info" data-toggle="modal" data-target="#detailModal{{ finding.id }}">
-                        <i class="fas fa-info-circle"></i>
-                    </button>
-                    <a href="{{ url_for('export.export_single_was_finding_txt', finding_id=finding.id) }}" 
-                       class="btn btn-sm btn-success" title="Export as TXT for ticket">
-                        <i class="fas fa-file-alt"></i>
-                    </a>
-                </td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="8" class="text-center">
-                    <i class="fas fa-search"></i> No WAS findings found.
-                    <br><br>
-                    <div class="alert alert-info d-inline-block text-left" style="max-width: 500px;">
-                        <strong>Troubleshooting WAS Data:</strong>
-                        <ol class="mb-0 mt-2">
-                            <li>Verify WAS scans are configured and running</li>
-                            <li>Check if WAS module is licensed in your Tenable subscription</li>
-                            <li>Ensure web applications have been scanned recently</li>
-                            <li>Try adjusting your filters or <a href="{{ url_for('main.was_findings') }}">reset all filters</a></li>
-                        </ol>
-                    </div>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-
-<!-- Modals - Outside the table -->
-{% for finding in was_findings %}
-            <div class="modal fade" id="detailModal{{ finding.id }}" tabindex="-1" role="dialog">
-                <div class="modal-dialog modal-lg" role="document">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">{{ finding.vulnerability_name or 'WAS Finding Details' }}</h5>
-                            <button type="button" class="close" data-dismiss="modal">
-                                <span>&times;</span>
-                            </button>
-                        </div>
-                        <div class="modal-body">
-                            <h6>Target Information</h6>
-                            <table class="table table-sm">
-                                <tr>
-                                    <th width="30%">Target URL:</th>
-                                    <td style="word-break: break-all;"><code>{{ finding.target_url or 'N/A' }}</code></td>
-                                </tr>
-                                <tr>
-                                    <th>Vulnerability ID:</th>
-                                    <td>{{ finding.vulnerability_id or 'N/A' }}</td>
-                                </tr>
-                                <tr>
-                                    <th>OWASP Category:</th>
-                                    <td>
-                                        {% if finding.owasp_category %}
-                                            <span class="badge badge-info">{{ finding.owasp_category }}</span>
-                                        {% else %}
-                                            N/A
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th>Severity:</th>
-                                    <td>
-                                        {% if finding.severity == 'critical' %}
-                                            <span class="badge badge-danger">CRITICAL</span>
-                                        {% elif finding.severity == 'high' %}
-                                            <span class="badge badge-warning">HIGH</span>
-                                        {% elif finding.severity == 'medium' %}
-                                            <span class="badge badge-info">MEDIUM</span>
-                                        {% else %}
-                                            <span class="badge badge-secondary">{{ finding.severity|upper }}</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <th>CVSS v3 Score:</th>
-                                    <td>{{ finding.cvss_v3_base_score or 'N/A' }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Status:</th>
-                                    <td>
-                                        {% if finding.status == 'Active' %}
-                                            <span class="badge badge-danger">Active</span>
-                                        {% elif finding.status == 'Fixed' %}
-                                            <span class="badge badge-success">Fixed</span>
-                                        {% else %}
-                                            <span class="badge badge-secondary">{{ finding.status }}</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                            </table>
-
-                            {% if finding.description %}
-                            <h6 class="mt-3">Description</h6>
-                            <div class="alert alert-light">
-                                {{ finding.description }}
-                            </div>
-                            {% endif %}
-
-                            {% if finding.solution %}
-                            <h6 class="mt-3">Solution</h6>
-                            <div class="alert alert-success">
-                                {{ finding.solution }}
-                            </div>
-                            {% endif %}
-
-                            {% if finding.plugin_compliance_mappings %}
-                            <h6 class="mt-3">GRC Compliance Mappings</h6>
-                            <table class="table table-sm table-bordered">
-                                <thead>
-                                    <tr>
-                                        <th>Framework</th>
-                                        <th>Requirement ID</th>
-                                        <th>Description</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for mapping in finding.plugin_compliance_mappings %}
-                                        {% if mapping.compliance_requirement %}
-                                        <tr>
-                                            <td><span class="badge badge-primary">{{ mapping.compliance_requirement.framework }}</span></td>
-                                            <td>{{ mapping.compliance_requirement.requirement_id }}</td>
-                                            <td><small>{{ mapping.compliance_requirement.description }}</small></td>
-                                        </tr>
-                                        {% endif %}
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                            {% endif %}
-
-                            <h6 class="mt-3">Timeline</h6>
-                            <table class="table table-sm">
-                                <tr>
-                                    <th width="30%">First Detected:</th>
-                                    <td>{{ finding.first_detected_at.strftime('%Y-%m-%d %H:%M') if finding.first_detected_at else 'N/A' }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Last Detected:</th>
-                                    <td>{{ finding.last_detected_at.strftime('%Y-%m-%d %H:%M') if finding.last_detected_at else 'N/A' }}</td>
-                                </tr>
-                            </table>
-                        </div>
-                        <div class="modal-footer">
-                            <a href="{{ url_for('export.export_single_was_finding_csv', finding_id=finding.id) }}" class="btn btn-success btn-sm">
-                                <i class="fas fa-download"></i> Export CSV
-                            </a>
-                            <a href="{{ url_for('export.export_single_was_finding_txt', finding_id=finding.id) }}" class="btn btn-info btn-sm">
-                                <i class="fas fa-file-alt"></i> Export TXT
-                            </a>
-                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% else %}
-            <tr>
-                <td colspan="8" class="text-center">
-                    <i class="fas fa-search"></i> No WAS findings found.
-                    <br><br>
-                    <div class="alert alert-info d-inline-block text-left" style="max-width: 500px;">
-                        <strong>Troubleshooting WAS Data:</strong>
-                        <ol class="mb-0 mt-2">
-                            <li>Verify WAS scans are configured and running</li>
-                            <li>Check if WAS module is licensed in your Tenable subscription</li>
-                            <li>Ensure web applications have been scanned recently</li>
-                            <li>Try adjusting your filters or <a href="{{ url_for('main.was_findings') }}">reset all filters</a></li>
-                        </ol>
-                    </div>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-
-<!-- Debug Information -->
-<div class="alert alert-secondary mt-4">
-    <h6><i class="fas fa-info-circle"></i> WAS Integration Status</h6>
-    <div class="row">
-        <div class="col-md-4">
-            <strong>WAS Findings in DB:</strong> {{ was_findings|length }}
-        </div>
-        <div class="col-md-4">
-            <strong>Feature Flag:</strong> 
-            <span class="badge badge-success">Enabled</span>
-        </div>
-        <div class="col-md-4">
-            <strong>Last Updated:</strong> During last data ingestion
-        </div>
-    </div>
-</div>
-
-{% endblock %}
-
-{% block extra_js %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Enable Bootstrap tooltips
-    if (typeof $ !== 'undefined' && $.fn.tooltip) {
-        $('[data-toggle="tooltip"]').tooltip();
-    }
+class TenableClient:
+    """Clean Tenable API client wrapper with Ermetic support"""
     
-    // Add click-to-copy for URLs
-    document.querySelectorAll('a[href^="http"]').forEach(link => {
-        link.addEventListener('click', function(e) {
-            if (e.ctrlKey || e.metaKey) {
-                // Allow normal click with Ctrl/Cmd
-                return true;
+    def __init__(self, access_key=None, secret_key=None, ermetic_url=None, ermetic_token=None):
+        """Initialize Tenable client with credentials"""
+        # Standard Tenable.io credentials
+        self.access_key = access_key or current_app.config.get('TENABLE_ACCESS_KEY') or os.getenv('TENABLE_ACCESS_KEY')
+        self.secret_key = secret_key or current_app.config.get('TENABLE_SECRET_KEY') or os.getenv('TENABLE_SECRET_KEY')
+        
+        # Ermetic API credentials  
+        self.ermetic_url = ermetic_url or current_app.config.get('ERMETIC_API_URL') or os.getenv('ERMETIC_API_URL')
+        self.ermetic_token = ermetic_token or current_app.config.get('ERMETIC_API_TOKEN') or os.getenv('ERMETIC_API_TOKEN')
+        
+        # Determine which APIs are available
+        self.has_ermetic = bool(self.ermetic_url and self.ermetic_token)
+        self.has_tenable = bool(self.access_key and self.secret_key)
+        
+        if self.has_ermetic and self.has_tenable:
+            current_app.logger.info("Both Tenable.io and Ermetic APIs available - using hybrid mode")
+            print("🔗 Hybrid mode: Tenable.io for vulnerabilities, Ermetic for cloud")
+        elif self.has_tenable:
+            current_app.logger.info("Using standard Tenable.io API only")
+            print("🔗 Using standard Tenable.io API")
+        elif self.has_ermetic:
+            current_app.logger.warning("Only Ermetic API available - limited functionality")
+            print("⚠️ Only Ermetic API available - vulnerability data will be limited")
+        else:
+            raise ValueError("Either Tenable.io credentials OR Ermetic API credentials required. Check your .env file.")
+        
+        self._tenable_client = None
+        self._ermetic_client = None
+        self._validated = False
+    
+    @property
+    def tenable_client(self):
+        """Get Tenable.io client instance with lazy initialization"""
+        if self._tenable_client is None and self.has_tenable:
+            current_app.logger.info("Creating Tenable.io client...")
+            self._tenable_client = TenableIO(self.access_key, self.secret_key)
+        return self._tenable_client
+    
+    @property
+    def ermetic_client(self):
+        """Get Ermetic client instance with lazy initialization"""
+        if self._ermetic_client is None and self.has_ermetic:
+            current_app.logger.info("Creating Ermetic API client...")
+            self._ermetic_client = self._create_ermetic_client()
+        return self._ermetic_client
+    
+    def _create_ermetic_client(self):
+        """Create custom Ermetic API client"""
+        class ErmeticClient:
+            def __init__(self, url, token):
+                self.url = url.rstrip('/')
+                self.token = token
+                self.headers = {
+                    'Authorization': f'Bearer {token}',
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'TenableDashboard/1.0 (pytenable/1.8.4)'
+                }
+                self.session = requests.Session()
+                self.session.headers.update(self.headers)
+            
+            def test_connection(self):
+                """Test Ermetic API connection"""
+                try:
+                    # Try multiple possible health check endpoints
+                    health_endpoints = [
+                        '/api/v1/health',
+                        '/api/health', 
+                        '/health',
+                        '/api/v1/status',
+                        '/status'
+                    ]
+                    
+                    for endpoint in health_endpoints:
+                        try:
+                            response = self.session.get(f'{self.url}{endpoint}', timeout=10)
+                            if response.status_code == 200:
+                                current_app.logger.info(f"Ermetic health check successful via {endpoint}")
+                                return True
+                        except requests.exceptions.RequestException:
+                            continue
+                    
+                    # If health checks fail, try a simple API call
+                    response = self.session.get(f'{self.url}/api/v1', timeout=10)
+                    return response.status_code in [200, 401, 403]  # 401/403 means API is responding
+                    
+                except Exception as e:
+                    current_app.logger.error(f"Ermetic connection test failed: {e}")
+                    return False
+            
+            def get_cloud_findings(self, since_date=None, limit=None):
+                """
+                Fetch cloud security findings from Ermetic
+                This would need to be implemented based on actual Ermetic API documentation
+                """
+                current_app.logger.info("Fetching cloud security findings from Ermetic...")
+                
+                try:
+                    # This is a placeholder implementation
+                    # Replace with actual Ermetic API calls for cloud security data
+                    endpoint = '/api/v1/cloud/findings'  # Example endpoint
+                    params = {}
+                    
+                    if since_date:
+                        params['since'] = since_date.isoformat()
+                    if limit:
+                        params['limit'] = limit
+                    
+                    response = self.session.get(f'{self.url}{endpoint}', params=params, timeout=30)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        # Process the response according to Ermetic API format
+                        findings = data.get('findings', [])
+                        current_app.logger.info(f"Retrieved {len(findings)} cloud findings from Ermetic")
+                        return findings
+                    else:
+                        current_app.logger.warning(f"Ermetic API returned status {response.status_code}")
+                        return []
+                        
+                except Exception as e:
+                    current_app.logger.error(f"Error fetching Ermetic cloud findings: {e}")
+                    return []
+        
+        return ErmeticClient(self.ermetic_url, self.ermetic_token)
+    
+    def validate_connection(self):
+        """Test the API connections"""
+        if self._validated:
+            return True
+        
+        success = False
+        
+        # Test Tenable.io connection if available
+        if self.has_tenable:
+            try:
+                current_app.logger.info("Testing Tenable.io connection...")
+                session_info = self.tenable_client.session.details()
+                user_name = session_info.get('name', 'Unknown')
+                user_email = session_info.get('email', 'Unknown')
+                
+                current_app.logger.info(f"✅ Connected to Tenable.io as: {user_name} ({user_email})")
+                print(f"✅ Tenable.io API connection successful - User: {user_name}")
+                success = True
+                
+            except Exception as e:
+                current_app.logger.error(f"Tenable.io connection failed: {e}")
+                print(f"❌ Tenable.io connection failed: {e}")
+        
+        # Test Ermetic connection if available
+        if self.has_ermetic:
+            try:
+                current_app.logger.info("Testing Ermetic connection...")
+                if self.ermetic_client.test_connection():
+                    current_app.logger.info("✅ Connected to Ermetic API")
+                    print("✅ Ermetic API connection successful")
+                    success = True
+                else:
+                    current_app.logger.warning("Ermetic API connection test failed")
+                    print("⚠️ Ermetic API connection test failed")
+                    
+            except Exception as e:
+                current_app.logger.error(f"Ermetic connection test error: {e}")
+                print(f"⚠️ Ermetic connection test error: {e}")
+        
+        if not success:
+            raise Exception("No API connections successful")
+        
+        self._validated = True
+        return True
+    
+    def fetch_vulnerability_findings(self, days_since=30, limit=None):
+        """
+        Fetch vulnerability findings from Tenable.io (ALWAYS use Tenable for vulnerabilities)
+        
+        Args:
+            days_since: Number of days to look back
+            limit: Maximum number of findings to return (for testing)
+        
+        Yields:
+            dict: Vulnerability finding data
+        """
+        if not self.has_tenable:
+            current_app.logger.error("Tenable.io credentials required for vulnerability findings")
+            raise ValueError("Tenable.io credentials required for vulnerability findings")
+        
+        # Always validate Tenable.io connection for vulnerability data
+        try:
+            session_info = self.tenable_client.session.details()
+            current_app.logger.info(f"Using Tenable.io for vulnerability data - User: {session_info.get('name', 'Unknown')}")
+        except Exception as e:
+            current_app.logger.error(f"Tenable.io connection failed: {e}")
+            raise
+        
+        # Calculate date range
+        past_date = datetime.now(timezone.utc) - timedelta(days=days_since)
+        since_timestamp = int(past_date.timestamp())
+        
+        current_app.logger.info(f"Fetching vulnerability findings since: {past_date.isoformat()}")
+        print(f"📥 Fetching vulnerability findings since: {past_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        
+        count = 0
+        try:
+            # ALWAYS use Tenable.io for vulnerability data
+            current_app.logger.info("Using Tenable.io API for vulnerability data")
+            print("🔗 Using Tenable.io API endpoint")
+            
+            export_params = {
+                'since': since_timestamp,
+                'state': ['open', 'reopened'],
+                'severity': ['critical', 'high', 'medium', 'low']
             }
-        });
-    });
-});
-</script>
-{% endblock %}
+            
+            for finding_data in self.tenable_client.exports.vulns(**export_params):
+                yield finding_data
+                count += 1
+                
+                if count % 1000 == 0:
+                    current_app.logger.info(f"Fetched {count} vulnerability findings...")
+                    print(f"📊 Fetched {count} vulnerability findings...")
+                
+                if limit and count >= limit:
+                    current_app.logger.info(f"Reached limit of {limit} findings")
+                    break
+                        
+        except Exception as e:
+            current_app.logger.error(f"Error fetching vulnerability findings: {e}")
+            raise
+        
+        current_app.logger.info(f"Total vulnerability findings retrieved: {count}")
+        print(f"✅ Total vulnerability findings retrieved: {count}")
+    
+    def fetch_was_findings(self, days_since=30):
+        """
+        Fetch WAS findings from Tenable.io (ALWAYS use Tenable for WAS)
+        
+        Args:
+            days_since: Number of days to look back
+            
+        Yields:
+            dict: WAS finding data
+        """
+        from config import FeatureFlags
+        
+        if not FeatureFlags.ENABLE_WAS_FINDINGS:
+            current_app.logger.info("WAS findings disabled by feature flag")
+            return
+        
+        if not self.has_tenable:
+            current_app.logger.warning("Tenable.io credentials required for WAS findings")
+            return
+        
+        # Always use Tenable.io for WAS data
+        past_date = datetime.now(timezone.utc) - timedelta(days=days_since)
+        since_date_str = past_date.strftime('%Y/%m/%d')
+        
+        current_app.logger.info(f"Fetching WAS findings since: {since_date_str}")
+        print(f"🌐 Fetching WAS findings since: {since_date_str}")
+        
+        count = 0
+        try:
+            was_findings = self.tenable_client.was.export(
+                and_filter=[
+                    ("scans_started_at", "gte", since_date_str),
+                    ("scans_status", "eq", "completed")
+                ]
+            )
+            
+            for finding_data in was_findings:
+                finding_detail = finding_data.get('finding', {})
+                risk_factor = finding_detail.get('risk_factor', '').lower()
+                
+                if risk_factor == 'info':
+                    continue
+                
+                yield finding_data
+                count += 1
+                
+                if count % 100 == 0:
+                    current_app.logger.info(f"Fetched {count} WAS findings...")
+                    print(f"📊 Fetched {count} WAS findings...")
+                    
+        except Exception as e:
+            current_app.logger.warning(f"WAS findings not available: {e}")
+            print("ℹ️  WAS findings not available - this is normal if you don't have WAS licensing")
+            return
+        
+        current_app.logger.info(f"Total WAS findings retrieved: {count}")
+        print(f"✅ Total WAS findings retrieved: {count}")
+    
+    def fetch_attack_path_candidates(self):
+        """
+        Generate attack paths from Tenable.io assets (ALWAYS use Tenable for attack paths)
+        """
+        from config import FeatureFlags
+        
+        if not FeatureFlags.ENABLE_ATTACK_PATH_ANALYSIS:
+            current_app.logger.info("Attack path analysis disabled by feature flag")
+            return
+        
+        if not self.has_tenable:
+            current_app.logger.warning("Tenable.io credentials required for attack path generation")
+            return
+        
+        current_app.logger.info("Generating attack path candidates from high-risk assets...")
+        print("🎯 Generating attack path candidates...")
+        
+        count = 0
+        try:
+            assets = list(self.tenable_client.exports.assets())
+            
+            for asset in assets:
+                critical_count = asset.get('critical_count', 0)
+                high_count = asset.get('high_count', 0)
+                
+                if critical_count > 2 or (critical_count > 0 and high_count > 5):
+                    asset_name = asset.get('hostname') or asset.get('ipv4') or f"Asset-{asset.get('id')}"
+                    
+                    attack_path_data = {
+                        'id': f"synthetic_path_{asset.get('id')}",
+                        'name': f"High Risk Path: {asset_name}",
+                        'description': f"Asset with {critical_count} critical and {high_count} high severity vulnerabilities",
+                        'risk_score': min(10.0, 5.0 + (critical_count * 1.5) + (high_count * 0.3)),
+                        'path_length': critical_count + high_count,
+                        'assets': [asset.get('id')],
+                        'critical_assets': [asset.get('id')] if critical_count > 2 else [],
+                        'status': 'ACTIVE',
+                        'created_at': datetime.now(timezone.utc).isoformat(),
+                        'updated_at': datetime.now(timezone.utc).isoformat()
+                    }
+                    
+                    yield attack_path_data
+                    count += 1
+                    
+                    if count >= 20:
+                        break
+                        
+        except Exception as e:
+            current_app.logger.error(f"Error generating attack path candidates: {e}")
+            raise
+        
+        current_app.logger.info(f"Generated {count} attack path candidates")
+        print(f"✅ Generated {count} attack path candidates")
+    
+    def fetch_cloud_findings(self, days_since=30):
+        """
+        Fetch cloud security findings from Ermetic (if available)
+        
+        Args:
+            days_since: Number of days to look back
+            
+        Yields:
+            dict: Cloud security finding data
+        """
+        from config import FeatureFlags
+        
+        if not FeatureFlags.ENABLE_CLOUD_METADATA:
+            current_app.logger.info("Cloud findings disabled by feature flag")
+            return
+        
+        if not self.has_ermetic:
+            current_app.logger.info("Ermetic credentials not available - skipping cloud findings")
+            print("ℹ️  Ermetic API not configured - skipping cloud-specific findings")
+            return
+        
+        past_date = datetime.now(timezone.utc) - timedelta(days=days_since)
+        
+        current_app.logger.info(f"Fetching cloud findings from Ermetic since: {past_date.isoformat()}")
+        print(f"☁️ Fetching cloud findings since: {past_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        
+        count = 0
+        try:
+            # Use Ermetic client for cloud-specific data
+            cloud_findings = self.ermetic_client.get_cloud_findings(since_date=past_date, limit=1000)
+            
+            for finding_data in cloud_findings:
+                yield finding_data
+                count += 1
+                
+                if count % 100 == 0:
+                    current_app.logger.info(f"Fetched {count} cloud findings...")
+                    print(f"📊 Fetched {count} cloud findings...")
+                    
+        except Exception as e:
+            current_app.logger.error(f"Error fetching cloud findings: {e}")
+            print(f"⚠️ Error fetching cloud findings: {e}")
+            return
+        
+        current_app.logger.info(f"Total cloud findings retrieved: {count}")
+        print(f"✅ Total cloud findings retrieved: {count}")
+    
+    def fetch_container_findings(self):
+        """
+        Fetch container security findings (placeholder)
+        Requires separate Container Security API key
+        """
+        from config import FeatureFlags
+        
+        if not FeatureFlags.ENABLE_CONTAINER_SECURITY:
+            current_app.logger.info("Container security disabled by feature flag")
+            return
+        
+        cs_api_key = current_app.config.get('TENABLE_CS_API_KEY')
+        if not cs_api_key:
+            current_app.logger.info("Container Security API key not configured")
+            print("ℹ️  Container Security API key not found - skipping container findings")
+            return
+        
+        current_app.logger.info("Container security integration would be implemented here")
+        print("🐳 Container security integration not yet implemented")
+        return
+        yield  # Make this a generator
+
+
+def get_tenable_client():
+    """Get a configured Tenable client instance"""
+    return TenableClient()
