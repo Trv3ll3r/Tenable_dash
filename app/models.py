@@ -1,107 +1,175 @@
-"""
-Database migration to add ticket_created column to VulnerabilityFinding model
-Run this after updating your models
+from .database import db
+from sqlalchemy import (Integer, String, DateTime, Text, Boolean, 
+                       Float, UniqueConstraint, ForeignKey, func)
+from sqlalchemy.orm import relationship
 
-Usage:
-    python add_ticket_tracking_migration.py
-"""
+# Enhanced VulnerabilityFinding with new fields for Tenable One
+class VulnerabilityFinding(db.Model):
+    __tablename__ = 'vulnerability_findings'
 
-from sqlalchemy import create_engine
-from sqlalchemy.sql import text
-import os
-from pathlib import Path
+    id = db.Column(Integer, primary_key=True)
+    plugin_id = db.Column(Integer, nullable=False)
+    plugin_name = db.Column(String)
+    asset_uuid = db.Column(String, nullable=False)
+    
+    finding_uuid = db.Column(String, nullable=True)
+    internal_finding_id = db.Column(String, nullable=False, unique=True)
+    
+    # Asset information
+    asset_hostname = db.Column(String)
+    asset_ipv4 = db.Column(String)
+    asset_ipv6 = db.Column(String)
+    asset_os = db.Column(String)
+    asset_tags = db.Column(Text)  # JSON string of asset tags
+    asset_network_id = db.Column(String)
+    asset_aws_ec2_instance_id = db.Column(String)
+    asset_azure_vm_id = db.Column(String)
+    asset_gcp_instance_id = db.Column(String)
+    
+    # Vulnerability details
+    severity = db.Column(String)
+    vpr_score = db.Column(Float)
+    cvss_v3_base_score = db.Column(Float)
+    cvss_v3_vector = db.Column(String)
+    cvss3_temporal_score = db.Column(Float)
+    description = db.Column(Text)
+    
+    solution = db.Column(Text)
+    synopsis = db.Column(Text)
+    see_also = db.Column(Text)
+    vuln_publication_date = db.Column(DateTime)
+    patch_publication_date = db.Column(DateTime)
+    exploit_available = db.Column(Boolean)
+    exploit_code_maturity = db.Column(String)
+    risk_factor = db.Column(String)
+    
+    # Attack path information (new for Tenable One)
+    attack_path_score = db.Column(Float)
+    attack_path_exposure_score = db.Column(Float)
+    is_in_attack_path = db.Column(Boolean, default=False)
+    attack_path_details = db.Column(Text)  # JSON string
+    
+    # Asset exposure (new for Tenable One)
+    asset_exposure_score = db.Column(Float)
+    business_criticality = db.Column(String)
+    exposure_confidence = db.Column(String)
+    
+    # Discovery information
+    first_found = db.Column(DateTime)
+    last_found = db.Column(DateTime)
+    fixed_at = db.Column(DateTime)
+    state = db.Column(String)  # OPEN, REOPENED, FIXED
+    
+    # Record keeping
+    record_created_at = db.Column(DateTime, default=func.now())
+    record_updated_at = db.Column(DateTime, default=func.now(), onupdate=func.now())
 
-def run_migration():
-    """Add ticket_created column to vulnerability_findings table"""
-    
-    # Get database directory from environment or use default
-    database_dir = os.environ.get('DATABASE_DIR', './data')
-    
-    # Construct the database path
-    db_path = Path(database_dir) / 'tenable_dashboard.db'
-    
-    # Check if database exists
-    if not db_path.exists():
-        print(f"✗ Database not found at: {db_path}")
-        print(f"  Please ensure your database exists before running migration.")
-        return False
-    
-    database_url = f'sqlite:///{db_path}'
-    print(f"Using database: {db_path}")
-    
-    engine = create_engine(database_url)
-    
-    try:
-        with engine.connect() as conn:
-            # Check if column already exists
-            print("Checking if 'ticket_created' column exists...")
-            result = conn.execute(text("PRAGMA table_info(vulnerability_findings)"))
-            columns = [row[1] for row in result]
-            
-            if 'ticket_created' in columns:
-                print("✓ Column 'ticket_created' already exists. Skipping migration.")
-                return True
-            
-            # Add the column
-            print("Adding 'ticket_created' column to vulnerability_findings table...")
-            
-            conn.execute(text("""
-                ALTER TABLE vulnerability_findings 
-                ADD COLUMN ticket_created BOOLEAN DEFAULT 0
-            """))
-            conn.commit()
-            print("✓ Successfully added 'ticket_created' column")
-            
-            # Initialize all existing records to False
-            print("Initializing existing records to False...")
-            result = conn.execute(text("""
-                UPDATE vulnerability_findings 
-                SET ticket_created = 0 
-                WHERE ticket_created IS NULL
-            """))
-            conn.commit()
-            
-            # Get count of updated records
-            result = conn.execute(text("SELECT COUNT(*) FROM vulnerability_findings"))
-            count = result.scalar()
-            print(f"✓ Initialized {count} existing records")
-            print("✓ Migration completed successfully!")
-            
-            return True
-            
-    except Exception as e:
-        print(f"✗ Error during migration: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    __table_args__ = (
+        UniqueConstraint('plugin_id', 'asset_uuid', 'last_found', 
+                        name='_plugin_asset_last_found_uc'),
+    )
 
+    plugin_compliance_mappings = relationship(
+        'PluginComplianceMapping',
+        primaryjoin="foreign(VulnerabilityFinding.plugin_id) == PluginComplianceMapping.plugin_id",
+        back_populates='finding_plugin',
+        viewonly=True,
+        uselist=True
+    )
 
-if __name__ == "__main__":
-    print("=" * 60)
-    print("Tenable Dashboard - Add Ticket Tracking Migration")
-    print("=" * 60)
-    print()
+class AttackPathFinding(db.Model):
+    __tablename__ = 'attack_path_findings'
     
-    success = run_migration()
+    id = db.Column(Integer, primary_key=True)
+    path_id = db.Column(String, nullable=False, unique=True)
+    attack_path_name = db.Column(String)
+    attack_path_description = db.Column(Text)
+    path_risk_score = db.Column(Float)
+    path_length = db.Column(Integer)
+    first_detected = db.Column(DateTime)
+    last_updated = db.Column(DateTime)
+    status = db.Column(String)
+
+class ComplianceRequirement(db.Model):
+    __tablename__ = 'compliance_requirements'
+    id = db.Column(Integer, primary_key=True)
+    framework = db.Column(String, nullable=False)
+    version = db.Column(String, nullable=True)
+    requirement_id = db.Column(String, nullable=False, unique=True)
+    description = db.Column(Text, nullable=True)
+
+    plugin_mappings_to_requirements = relationship(
+        'PluginComplianceMapping',
+        back_populates='compliance_requirement',
+        uselist=True
+    )
+
+class PluginComplianceMapping(db.Model):
+    __tablename__ = 'plugin_compliance_mappings'
+    id = db.Column(Integer, primary_key=True)
+    plugin_id = db.Column(Integer, nullable=False)
+    compliance_requirement_id = db.Column(Integer, ForeignKey('compliance_requirements.id'), nullable=False)
+
+    __table_args__ = (UniqueConstraint('plugin_id', 'compliance_requirement_id', name='_plugin_compliance_uc'),)
+
+    compliance_requirement = relationship('ComplianceRequirement', back_populates='plugin_mappings_to_requirements')
+    finding_plugin = relationship('VulnerabilityFinding', primaryjoin="PluginComplianceMapping.plugin_id == foreign(VulnerabilityFinding.plugin_id)", back_populates='plugin_compliance_mappings', viewonly=True)
+
+class WASFinding(db.Model):
+    __tablename__ = 'was_findings'
+
+    id = db.Column(Integer, primary_key=True)
+    composite_finding_id = db.Column(String, nullable=False, unique=True)
+    vulnerability_id = db.Column(String)
+    vulnerability_name = db.Column(String, nullable=False)
+    target_url = db.Column(String, nullable=False)
+    severity = db.Column(String)
+    status = db.Column(String)
+    first_detected_at = db.Column(DateTime)
+    last_detected_at = db.Column(DateTime)
+
+    plugin_compliance_mappings = relationship(
+        'PluginComplianceMapping',
+        primaryjoin="foreign(WASFinding.vulnerability_id) == PluginComplianceMapping.plugin_id",
+        back_populates='was_finding_plugin',
+        viewonly=True,
+        uselist=True
+    )
+
+# Container Security Finding model (optional - can be added later if needed)
+class ContainerSecurityFinding(db.Model):
+    __tablename__ = 'container_security_findings'
     
-    if success:
-        print()
-        print("=" * 60)
-        print("Migration completed successfully!")
-        print("=" * 60)
-        print()
-        print("Next steps:")
-        print("1. ✓ The ticket_created column has been added to your database")
-        print("2. ✓ Your models.py file should already have the field")
-        print("3. → Restart your application: python run.py")
-        print("4. → The ticket tracking feature is now ready to use!")
-        print()
-    else:
-        print()
-        print("=" * 60)
-        print("Migration failed!")
-        print("=" * 60)
-        print()
-        print("Please check the error message above.")
-        print("If the database doesn't exist yet, run: python run.py")
-        print("to create it, then run this migration again.")
+    id = db.Column(Integer, primary_key=True)
+    finding_id = db.Column(String, nullable=False, unique=True)
+    
+    # Container information
+    container_id = db.Column(String)
+    container_name = db.Column(String)
+    image_name = db.Column(String)
+    image_tag = db.Column(String)
+    image_digest = db.Column(String)
+    
+    # Vulnerability details
+    vulnerability_id = db.Column(String)
+    vulnerability_name = db.Column(String)
+    severity = db.Column(String)
+    cvss_score = db.Column(Float)
+    description = db.Column(Text)
+    
+    # Package information
+    package_name = db.Column(String)
+    package_version = db.Column(String)
+    fixed_version = db.Column(String)
+    
+    # Discovery information
+    first_detected = db.Column(DateTime)
+    last_seen = db.Column(DateTime)
+    status = db.Column(String)
+    
+    # Record keeping
+    record_created_at = db.Column(DateTime, default=func.now())
+    record_updated_at = db.Column(DateTime, default=func.now(), onupdate=func.now())
+
+# Add missing relationship to PluginComplianceMapping for WAS findings
+PluginComplianceMapping.was_finding_plugin = relationship('WASFinding', primaryjoin="PluginComplianceMapping.plugin_id == foreign(WASFinding.vulnerability_id)", back_populates='plugin_compliance_mappings', viewonly=True)
