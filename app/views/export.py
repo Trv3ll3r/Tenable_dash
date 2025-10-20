@@ -3,12 +3,12 @@ import csv
 from datetime import datetime, timedelta, timezone
 from flask import Blueprint, make_response, current_app, request
 from sqlalchemy.orm import subqueryload
-from sqlalchemy import case
+from sqlalchemy import case, func
 from collections import defaultdict
 import traceback
 
 from ..database import db
-from ..models import VulnerabilityFinding, WASFinding, PluginComplianceMapping, ComplianceRequirement
+from ..models import VulnerabilityFinding, WASFinding, CloudFinding, PluginComplianceMapping, ComplianceRequirement
 
 # CREATE THE BLUEPRINT FIRST
 export_bp = Blueprint('export', __name__)
@@ -174,7 +174,7 @@ def export_txt():
 def export_was_findings_csv():
     """Export WAS findings to CSV with URL filtering"""
     try:
-        url_filter = request.args.get('subdomain', '').strip()  # Keep param name for compatibility
+        url_filter = request.args.get('subdomain', '').strip()
         
         query = WASFinding.query
         if url_filter:
@@ -222,7 +222,7 @@ def export_was_findings_csv():
 def export_was_findings_txt():
     """Export WAS findings to TXT format with URL filtering"""
     try:
-        url_filter = request.args.get('subdomain', '').strip()  # Keep param name for compatibility
+        url_filter = request.args.get('subdomain', '').strip()
         
         query = WASFinding.query
         if url_filter:
@@ -507,7 +507,6 @@ def export_grouped_findings_txt():
 def export_single_grouped_finding_txt(plugin_id):
     """Export a single grouped finding (all findings for a specific plugin_id) as TXT for ticketing"""
     try:
-        # Get all findings for this plugin_id
         findings = VulnerabilityFinding.query.filter(
             VulnerabilityFinding.plugin_id == plugin_id
         ).options(
@@ -518,10 +517,8 @@ def export_single_grouped_finding_txt(plugin_id):
         if not findings:
             return "No findings found for this plugin", 404
         
-        # Use first finding for vulnerability details
         first_finding = findings[0]
         
-        # Collect GRC mappings
         grc_by_framework = defaultdict(set)
         if hasattr(first_finding, 'plugin_compliance_mappings') and first_finding.plugin_compliance_mappings:
             for mapping in first_finding.plugin_compliance_mappings:
@@ -530,7 +527,6 @@ def export_single_grouped_finding_txt(plugin_id):
                     req_id = mapping.compliance_requirement.requirement_id
                     grc_by_framework[framework].add(req_id)
         
-        # Generate TXT content
         txt_content = []
         txt_content.append("=" * 80)
         txt_content.append("VULNERABILITY REPORT - GROUPED FINDING")
@@ -594,7 +590,6 @@ def export_single_grouped_finding_txt(plugin_id):
 def export_single_grouped_finding_csv(plugin_id):
     """Export a single grouped finding (all findings for a specific plugin_id) as CSV"""
     try:
-        # Get all findings for this plugin_id
         findings = VulnerabilityFinding.query.filter(
             VulnerabilityFinding.plugin_id == plugin_id
         ).options(
@@ -829,3 +824,320 @@ def export_single_was_finding_txt(finding_id):
         current_app.logger.error(f"Error generating single WAS finding TXT: {str(e)}")
         current_app.logger.error(traceback.format_exc())
         return f"Error generating TXT: {str(e)}", 500
+
+
+@export_bp.route('/export_cloud_findings_csv')
+def export_cloud_findings_csv():
+    """Export cloud security findings to CSV format"""
+    try:
+        # Get filter parameters
+        cloud_provider = request.args.get('cloud_provider', 'all')
+        severity = request.args.get('severity', 'all')
+        status = request.args.get('status', 'open')
+        
+        # Build query
+        query = CloudFinding.query
+        
+        # Apply filters
+        if status == 'open':
+            query = query.filter(CloudFinding.status == 'Open')
+        elif status == 'closed':
+            query = query.filter(CloudFinding.status.in_(['Closed', 'Resolved', 'Fixed']))
+        
+        if severity != 'all':
+            query = query.filter(func.lower(CloudFinding.severity) == severity.lower())
+        
+        if cloud_provider != 'all':
+            query = query.filter(func.lower(CloudFinding.cloud_provider) == cloud_provider.lower())
+        
+        findings = query.all()
+        
+        current_app.logger.info(f"Exporting {len(findings)} cloud findings to CSV")
+        
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow([
+            'Finding ID', 'Title', 'Policy Violated', 'Severity', 'Risk Score',
+            'Status', 'Cloud Provider', 'Resource Name', 'Resource Type',
+            'Resource Region', 'Account ID', 'Created', 'Updated',
+            'Compliance Frameworks', 'Description', 'Remediation'
+        ])
+        
+        # Write data
+        for finding in findings:
+            frameworks = ', '.join(finding.compliance_frameworks) if finding.compliance_frameworks else ''
+            
+            writer.writerow([
+                finding.finding_id,
+                finding.title,
+                finding.policy_violated,
+                finding.severity,
+                finding.risk_score,
+                finding.status,
+                finding.cloud_provider,
+                finding.resource_name,
+                finding.resource_type,
+                finding.resource_region,
+                finding.account_id,
+                finding.created_at.strftime('%Y-%m-%d %H:%M') if finding.created_at else '',
+                finding.updated_at.strftime('%Y-%m-%d %H:%M') if finding.updated_at else '',
+                frameworks,
+                finding.description or '',
+                finding.remediation or ''
+            ])
+        
+        # Create response
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=cloud_findings_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        
+        return response
+        
+    except Exception as e:
+        current_app.logger.error(f"Error exporting cloud findings to CSV: {e}")
+        return f"Error exporting cloud findings: {str(e)}", 500
+
+
+@export_bp.route('/export_cloud_findings_txt')
+def export_cloud_findings_txt():
+    """Export cloud security findings to TXT format for ticketing systems"""
+    try:
+        # Get filter parameters from request
+        cloud_provider = request.args.get('cloud_provider', 'all')
+        severity = request.args.get('severity', 'all')
+        status = request.args.get('status', 'open')
+        
+        # Build query
+        query = CloudFinding.query
+        
+        # Apply filters
+        if status == 'open':
+            query = query.filter(CloudFinding.status == 'Open')
+        elif status == 'closed':
+            query = query.filter(CloudFinding.status.in_(['Closed', 'Resolved', 'Fixed']))
+        
+        if severity != 'all':
+            query = query.filter(func.lower(CloudFinding.severity) == severity.lower())
+        
+        if cloud_provider != 'all':
+            query = query.filter(func.lower(CloudFinding.cloud_provider) == cloud_provider.lower())
+        
+        # Order by severity and risk score
+        findings = query.order_by(
+            case(
+                (CloudFinding.severity == 'Critical', 1),
+                (CloudFinding.severity == 'High', 2),
+                (CloudFinding.severity == 'Medium', 3),
+                (CloudFinding.severity == 'Low', 4),
+                else_=5
+            ),
+            CloudFinding.risk_score.desc()
+        ).all()
+        
+        current_app.logger.info(f"Exporting {len(findings)} cloud findings to TXT")
+        
+        # Generate TXT content
+        output = io.StringIO()
+        
+        # Header
+        output.write("=" * 80 + "\n")
+        output.write("TENABLE CLOUD SECURITY FINDINGS EXPORT\n")
+        output.write("=" * 80 + "\n")
+        output.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        output.write(f"Total Findings: {len(findings)}\n")
+        
+        if cloud_provider != 'all':
+            output.write(f"Cloud Provider: {cloud_provider.upper()}\n")
+        if severity != 'all':
+            output.write(f"Severity Filter: {severity.capitalize()}\n")
+        if status != 'all':
+            output.write(f"Status Filter: {status.capitalize()}\n")
+        
+        output.write("\n")
+        
+        # Summary by provider
+        provider_counts = {}
+        severity_counts = {}
+        for finding in findings:
+            provider_counts[finding.cloud_provider] = provider_counts.get(finding.cloud_provider, 0) + 1
+            severity_counts[finding.severity] = severity_counts.get(finding.severity, 0) + 1
+        
+        output.write("SUMMARY BY CLOUD PROVIDER:\n")
+        output.write("-" * 80 + "\n")
+        for provider, count in sorted(provider_counts.items()):
+            output.write(f"  {provider:20s}: {count:4d} findings\n")
+        
+        output.write("\n")
+        output.write("SUMMARY BY SEVERITY:\n")
+        output.write("-" * 80 + "\n")
+        for sev in ['Critical', 'High', 'Medium', 'Low']:
+            count = severity_counts.get(sev, 0)
+            if count > 0:
+                output.write(f"  {sev:20s}: {count:4d} findings\n")
+        
+        output.write("\n\n")
+        
+        # Individual findings
+        for idx, finding in enumerate(findings, 1):
+            output.write("=" * 80 + "\n")
+            output.write(f"FINDING #{idx}: {finding.title or 'Cloud Security Finding'}\n")
+            output.write("=" * 80 + "\n\n")
+            
+            # Basic Info
+            output.write(f"Finding ID:        {finding.finding_id}\n")
+            output.write(f"Severity:          {finding.severity} (Risk Score: {finding.risk_score})\n")
+            output.write(f"Status:            {finding.status}\n")
+            output.write(f"Cloud Provider:    {finding.cloud_provider}\n")
+            output.write(f"Resource Name:     {finding.resource_name or 'N/A'}\n")
+            
+            if finding.resource_type:
+                output.write(f"Resource Type:     {finding.resource_type}\n")
+            if finding.resource_region:
+                output.write(f"Region:            {finding.resource_region}\n")
+            if finding.account_id:
+                output.write(f"Account ID:        {finding.account_id}\n")
+            if finding.resource_id:
+                output.write(f"Resource ID:       {finding.resource_id}\n")
+            
+            output.write(f"Created:           {finding.created_at.strftime('%Y-%m-%d %H:%M UTC') if finding.created_at else 'N/A'}\n")
+            output.write(f"Last Updated:      {finding.updated_at.strftime('%Y-%m-%d %H:%M UTC') if finding.updated_at else 'N/A'}\n")
+            
+            output.write("\n")
+            
+            # Policy Violated
+            if finding.policy_violated:
+                output.write("-" * 80 + "\n")
+                output.write("POLICY VIOLATED:\n")
+                output.write("-" * 80 + "\n")
+                output.write(f"{finding.policy_violated}\n\n")
+            
+            # Description
+            if finding.description:
+                output.write("-" * 80 + "\n")
+                output.write("DESCRIPTION:\n")
+                output.write("-" * 80 + "\n")
+                output.write(f"{finding.description}\n\n")
+            
+            # Remediation
+            if finding.remediation:
+                output.write("-" * 80 + "\n")
+                output.write("REMEDIATION:\n")
+                output.write("-" * 80 + "\n")
+                output.write(f"{finding.remediation}\n\n")
+            
+            # Compliance Frameworks
+            if finding.compliance_frameworks:
+                output.write("-" * 80 + "\n")
+                output.write("COMPLIANCE FRAMEWORKS:\n")
+                output.write("-" * 80 + "\n")
+                for framework in finding.compliance_frameworks:
+                    output.write(f"  - {framework}\n")
+                output.write("\n")
+            
+            output.write("\n")
+        
+        # Footer
+        output.write("=" * 80 + "\n")
+        output.write("END OF REPORT\n")
+        output.write("=" * 80 + "\n")
+        
+        # Create response
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/plain'
+        response.headers['Content-Disposition'] = f'attachment; filename=cloud_findings_{datetime.now().strftime("%Y%m%d_%H%M%S")}.txt'
+        
+        current_app.logger.info("Cloud findings TXT export completed successfully")
+        return response
+        
+    except Exception as e:
+        current_app.logger.error(f"Error exporting cloud findings to TXT: {e}")
+        current_app.logger.error(traceback.format_exc())
+        return f"Error exporting cloud findings: {str(e)}", 500
+
+
+@export_bp.route('/export_cloud_finding_txt/<int:finding_id>')
+def export_cloud_finding_txt(finding_id):
+    """Export single cloud finding to TXT format for ticketing"""
+    try:
+        finding = CloudFinding.query.get_or_404(finding_id)
+        
+        current_app.logger.info(f"Exporting cloud finding {finding_id} to TXT")
+        
+        # Generate TXT content
+        output = io.StringIO()
+        
+        # Title
+        output.write("=" * 80 + "\n")
+        output.write(f"CLOUD SECURITY FINDING: {finding.title or 'Security Finding'}\n")
+        output.write("=" * 80 + "\n\n")
+        
+        # Basic Info
+        output.write(f"Finding ID:        {finding.finding_id}\n")
+        output.write(f"Severity:          {finding.severity} (Risk Score: {finding.risk_score})\n")
+        output.write(f"Status:            {finding.status}\n")
+        output.write(f"Cloud Provider:    {finding.cloud_provider}\n")
+        output.write(f"Resource Name:     {finding.resource_name or 'N/A'}\n")
+        
+        if finding.resource_type:
+            output.write(f"Resource Type:     {finding.resource_type}\n")
+        if finding.resource_region:
+            output.write(f"Region:            {finding.resource_region}\n")
+        if finding.account_id:
+            output.write(f"Account ID:        {finding.account_id}\n")
+        if finding.resource_id:
+            output.write(f"Resource ID:       {finding.resource_id}\n")
+        
+        output.write(f"Created:           {finding.created_at.strftime('%Y-%m-%d %H:%M UTC') if finding.created_at else 'N/A'}\n")
+        output.write(f"Last Updated:      {finding.updated_at.strftime('%Y-%m-%d %H:%M UTC') if finding.updated_at else 'N/A'}\n")
+        
+        output.write("\n")
+        
+        # Policy Violated
+        if finding.policy_violated:
+            output.write("-" * 80 + "\n")
+            output.write("POLICY VIOLATED:\n")
+            output.write("-" * 80 + "\n")
+            output.write(f"{finding.policy_violated}\n\n")
+        
+        # Description
+        if finding.description:
+            output.write("-" * 80 + "\n")
+            output.write("DESCRIPTION:\n")
+            output.write("-" * 80 + "\n")
+            output.write(f"{finding.description}\n\n")
+        
+        # Remediation
+        if finding.remediation:
+            output.write("-" * 80 + "\n")
+            output.write("REMEDIATION:\n")
+            output.write("-" * 80 + "\n")
+            output.write(f"{finding.remediation}\n\n")
+        
+        # Compliance
+        if finding.compliance_frameworks:
+            output.write("-" * 80 + "\n")
+            output.write("COMPLIANCE FRAMEWORKS:\n")
+            output.write("-" * 80 + "\n")
+            for framework in finding.compliance_frameworks:
+                output.write(f"  - {framework}\n")
+            output.write("\n")
+        
+        # Footer
+        output.write("=" * 80 + "\n")
+        output.write(f"Exported: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        output.write("=" * 80 + "\n")
+        
+        # Create response
+        safe_resource_name = (finding.resource_name or 'unknown').replace('/', '_').replace('\\', '_')
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/plain'
+        response.headers['Content-Disposition'] = f'attachment; filename=cloud_finding_{finding.cloud_provider}_{safe_resource_name}.txt'
+        
+        return response
+        
+    except Exception as e:
+        current_app.logger.error(f"Error exporting cloud finding {finding_id} to TXT: {e}")
+        return f"Error exporting cloud finding: {str(e)}", 500
