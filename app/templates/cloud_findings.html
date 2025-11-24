@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Cloud Findings - Tenable Dashboard{% endblock %}
+{% block title %}Cloud Security Findings - Tenable Dashboard{% endblock %}
 
 {% block content %}
 <!-- Navigation Tabs -->
@@ -36,9 +36,9 @@
             </label>
             <select name="cloud_provider" id="cloud_provider" class="form-control form-control-sm">
                 <option value="all" {% if selected_cloud_provider == 'all' or not selected_cloud_provider %}selected{% endif %}>All Providers</option>
-                <option value="aws" {% if selected_cloud_provider == 'aws' %}selected{% endif %}>AWS Only</option>
-                <option value="azure" {% if selected_cloud_provider == 'azure' %}selected{% endif %}>Azure Only</option>
-                <option value="gcp" {% if selected_cloud_provider == 'gcp' %}selected{% endif %}>GCP Only</option>
+                {% for provider in available_providers %}
+                <option value="{{ provider|lower }}" {% if selected_cloud_provider == provider|lower %}selected{% endif %}>{{ provider }}</option>
+                {% endfor %}
             </select>
         </div>
 
@@ -47,7 +47,7 @@
                 <i class="fas fa-exclamation-triangle"></i> Severity:
             </label>
             <select name="severity" id="severity" class="form-control form-control-sm">
-                <option value="actionable" {% if selected_severity == 'actionable' or not selected_severity %}selected{% endif %}>Actionable (No Info)</option>
+                <option value="all" {% if selected_severity == 'all' or not selected_severity %}selected{% endif %}>All Severities</option>
                 <option value="critical" {% if selected_severity == 'critical' %}selected{% endif %}>Critical Only</option>
                 <option value="high" {% if selected_severity == 'high' %}selected{% endif %}>High Only</option>
                 <option value="medium" {% if selected_severity == 'medium' %}selected{% endif %}>Medium Only</option>
@@ -55,62 +55,109 @@
             </select>
         </div>
 
+        <div class="form-group mr-3">
+            <label for="status" class="mr-2 text-white">
+                <i class="fas fa-check-circle"></i> Status:
+            </label>
+            <select name="status" id="status" class="form-control form-control-sm">
+                <option value="open" {% if selected_status == 'open' or not selected_status %}selected{% endif %}>Open Only</option>
+                <option value="closed" {% if selected_status == 'closed' %}selected{% endif %}>Closed/Fixed</option>
+                <option value="all" {% if selected_status == 'all' %}selected{% endif %}>All Statuses</option>
+            </select>
+        </div>
+
+        <div class="form-group mr-3">
+            <label for="time_period" class="mr-2 text-white">
+                <i class="fas fa-calendar-alt"></i> Period:
+            </label>
+            <select name="time_period" id="time_period" class="form-control form-control-sm">
+                <option value="30_days" {% if selected_time_period == '30_days' or not selected_time_period %}selected{% endif %}>Last 30 Days</option>
+                <option value="7_days" {% if selected_time_period == '7_days' %}selected{% endif %}>Last 7 Days</option>
+                <option value="all" {% if selected_time_period == 'all' %}selected{% endif %}>All Time</option>
+            </select>
+        </div>
+
         <div>
             <button type="submit" class="btn btn-primary btn-sm">
                 <i class="fas fa-filter"></i> Apply Filters
             </button>
-            <a href="{{ url_for('main.dashboard') }}" class="btn btn-secondary btn-sm ml-2">
-                <i class="fas fa-server"></i> All Vulnerabilities
+            <a href="{{ url_for('main.cloud_findings') }}" class="btn btn-secondary btn-sm ml-2">
+                <i class="fas fa-redo"></i> Reset
+            </a>
+            <a href="{{ url_for('export.export_cloud_findings_csv', cloud_provider=selected_cloud_provider or 'all', severity=selected_severity or 'all', status=selected_status or 'open') }}" 
+               class="btn btn-success btn-sm ml-2">
+                <i class="fas fa-file-csv"></i> Export CSV
+            </a>
+            <a href="{{ url_for('export.export_cloud_findings_txt', cloud_provider=selected_cloud_provider or 'all', severity=selected_severity or 'all', status=selected_status or 'open') }}" 
+               class="btn btn-info btn-sm ml-2">
+                <i class="fas fa-file-alt"></i> Export TXT
             </a>
         </div>
     </form>
 </div>
 
-<!-- Cloud Summary -->
+<!-- Cloud Provider Stats -->
+<div class="row mb-3">
+    <div class="col-md-2">
+        <div class="metric-card">
+            <h6><i class="fas fa-shield-alt"></i> Total Findings</h6>
+            <div class="count" style="font-size: 2rem;">{{ cloud_stats.total or 0 }}</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="metric-card">
+            <h6><i class="fab fa-aws"></i> AWS</h6>
+            <div class="count" style="font-size: 2rem;">{{ cloud_stats.aws or 0 }}</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="metric-card">
+            <h6><i class="fab fa-microsoft"></i> Azure</h6>
+            <div class="count" style="font-size: 2rem;">{{ cloud_stats.azure or 0 }}</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="metric-card">
+            <h6><i class="fab fa-google"></i> GCP</h6>
+            <div class="count" style="font-size: 2rem;">{{ cloud_stats.gcp or 0 }}</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="metric-card severity-critical">
+            <h6><i class="fas fa-exclamation-circle"></i> Critical</h6>
+            <div class="count" style="font-size: 2rem;">{{ cloud_stats.critical or 0 }}</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="metric-card severity-high">
+            <h6><i class="fas fa-exclamation-triangle"></i> High</h6>
+            <div class="count" style="font-size: 2rem;">{{ cloud_stats.high or 0 }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Cloud Security Info Alert -->
 {% if cloud_findings|length == 0 %}
 <div class="alert alert-warning">
     <i class="fas fa-exclamation-triangle"></i> 
-    <strong>No cloud asset vulnerabilities found.</strong> 
+    <strong>No cloud security findings found.</strong> 
     <br>This could mean:
     <ul class="mb-0 mt-2">
-        <li>No cloud assets are being scanned by Tenable</li>
-        <li>Cloud assets aren't tagged with provider information</li>
-        <li>Current filters exclude all cloud findings</li>
-        <li>Cloud discovery requires specific Tenable licensing</li>
+        <li>No findings detected by Tenable Cloud Security (Ermetic)</li>
+        <li>Current filters exclude all findings</li>
+        <li>Cloud Security integration requires proper API credentials</li>
+        <li>Data ingestion may need to be triggered</li>
     </ul>
+    <div class="mt-3">
+        <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary btn-sm">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
 </div>
 {% else %}
 <div class="alert alert-success">
     <i class="fas fa-check-circle"></i> 
-    <strong>Showing {{ cloud_findings|length }} cloud asset vulnerabilities</strong> with current filters.
-</div>
-
-<!-- Cloud Provider Stats -->
-<div class="row mb-3">
-    <div class="col-md-3">
-        <div class="metric-card">
-            <h6><i class="fab fa-aws"></i> AWS Assets</h6>
-            <div class="count" style="font-size: 2rem;">{{ cloud_stats.aws or 0 }}</div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="metric-card">
-            <h6><i class="fab fa-microsoft"></i> Azure Assets</h6>
-            <div class="count" style="font-size: 2rem;">{{ cloud_stats.azure or 0 }}</div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="metric-card">
-            <h6><i class="fab fa-google"></i> GCP Assets</h6>
-            <div class="count" style="font-size: 2rem;">{{ cloud_stats.gcp or 0 }}</div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="metric-card">
-            <h6><i class="fas fa-cloud"></i> Total Cloud</h6>
-            <div class="count" style="font-size: 2rem;">{{ cloud_findings|length }}</div>
-        </div>
-    </div>
+    <strong>Showing {{ cloud_findings|length }} cloud security findings</strong> from Tenable Cloud Security.
 </div>
 {% endif %}
 
@@ -119,90 +166,252 @@
     <table class="table table-hover table-sm">
         <thead>
             <tr>
-                <th><i class="fas fa-puzzle-piece"></i> Vulnerability</th>
-                <th><i class="fas fa-cloud"></i> Cloud Asset</th>
+                <th><i class="fas fa-shield-alt"></i> Policy / Finding</th>
+                <th><i class="fas fa-cloud"></i> Resource</th>
                 <th><i class="fas fa-exclamation-triangle"></i> Severity</th>
-                <th><i class="fas fa-tachometer-alt"></i> VPR Score</th>
-                <th><i class="fas fa-info-circle"></i> Description</th>
-                <th><i class="fas fa-calendar-alt"></i> Last Found</th>
+                <th><i class="fas fa-tachometer-alt"></i> Risk Score</th>
                 <th><i class="fas fa-check-circle"></i> Status</th>
+                <th><i class="fas fa-calendar-alt"></i> Created</th>
+                <th><i class="fas fa-tools"></i> Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for finding in cloud_findings %}
             <tr>
                 <td>
-                    <strong>{{ finding.plugin_name or 'Unknown Plugin' }}</strong>
-                    <br><small class="text-muted">Plugin ID: {{ finding.plugin_id }}</small>
-                </td>
-                <td>
-                    <div>
-                        <strong>{{ finding.asset_hostname or finding.asset_ipv4 or 'Unknown' }}</strong>
-                        <br>
-                        {% if finding.asset_aws_ec2_instance_id %}
-                            <span class="badge badge-warning">
-                                <i class="fab fa-aws"></i> {{ finding.asset_aws_ec2_instance_id }}
-                            </span>
-                        {% endif %}
-                        {% if finding.asset_azure_vm_id %}
-                            <span class="badge badge-info">
-                                <i class="fab fa-microsoft"></i> {{ finding.asset_azure_vm_id }}
-                            </span>
-                        {% endif %}
-                        {% if finding.asset_gcp_instance_id %}
-                            <span class="badge badge-success">
-                                <i class="fab fa-google"></i> {{ finding.asset_gcp_instance_id }}
-                            </span>
-                        {% endif %}
-                        {% if finding.asset_tags %}
-                            <br><small class="text-muted">{{ finding.asset_tags[:100] }}{% if finding.asset_tags|length > 100 %}...{% endif %}</small>
-                        {% endif %}
-                    </div>
-                </td>
-                <td>
-                    {% if finding.severity %}
-                        <span class="badge badge-{{ finding.severity|lower }}">{{ finding.severity|upper }}</span>
-                    {% else %}
-                        <span class="badge badge-secondary">UNKNOWN</span>
+                    <strong>{{ finding.title or finding.policy_violated or 'Cloud Security Finding' }}</strong>
+                    <br>
+                    <small class="text-muted">
+                        <i class="fas fa-file-alt"></i> {{ finding.policy_violated or 'Policy Violation' }}
+                    </small>
+                    {% if finding.compliance_frameworks %}
+                    <br>
+                    {% for framework in finding.compliance_frameworks[:2] %}
+                        <span class="badge badge-info badge-sm">{{ framework }}</span>
+                    {% endfor %}
                     {% endif %}
                 </td>
                 <td>
-                    {% if finding.vpr_score %}
-                        <span class="badge badge-info">{{ "%.1f"|format(finding.vpr_score|float) }}</span>
+                    <div>
+                        <strong>{{ finding.resource_name or 'Unknown Resource' }}</strong>
+                        <br>
+                        {% if finding.cloud_provider == 'AWS' %}
+                            <span class="badge badge-warning">
+                                <i class="fab fa-aws"></i> AWS
+                            </span>
+                        {% elif finding.cloud_provider == 'Azure' %}
+                            <span class="badge badge-info">
+                                <i class="fab fa-microsoft"></i> Azure
+                            </span>
+                        {% elif finding.cloud_provider == 'GCP' %}
+                            <span class="badge badge-success">
+                                <i class="fab fa-google"></i> GCP
+                            </span>
+                        {% else %}
+                            <span class="badge badge-secondary">
+                                <i class="fas fa-cloud"></i> {{ finding.cloud_provider or 'Unknown' }}
+                            </span>
+                        {% endif %}
+                        <br>
+                        <small class="text-muted">
+                            {% if finding.resource_type %}
+                            <i class="fas fa-tag"></i> {{ finding.resource_type }}
+                            <br>
+                            {% endif %}
+                            {% if finding.resource_region %}
+                            <i class="fas fa-map-marker-alt"></i> {{ finding.resource_region }}
+                            {% endif %}
+                        </small>
+                    </div>
+                </td>
+                <td>
+                    {% if finding.severity == 'Critical' %}
+                        <span class="badge badge-critical">CRITICAL</span>
+                    {% elif finding.severity == 'High' %}
+                        <span class="badge badge-high">HIGH</span>
+                    {% elif finding.severity == 'Medium' %}
+                        <span class="badge badge-medium">MEDIUM</span>
+                    {% elif finding.severity == 'Low' %}
+                        <span class="badge badge-low">LOW</span>
+                    {% else %}
+                        <span class="badge badge-secondary">{{ finding.severity or 'UNKNOWN' }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if finding.risk_score %}
+                        <span class="badge badge-info">{{ "%.1f"|format(finding.risk_score|float) }}</span>
                     {% else %}
                         <span class="text-muted">N/A</span>
                     {% endif %}
                 </td>
                 <td>
-                    <div style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;" 
-                         title="{{ finding.description or 'No description available' }}">
-                        {{ (finding.description or 'No description available')[:120] }}{% if finding.description and finding.description|length > 120 %}...{% endif %}
-                    </div>
-                </td>
-                <td>{{ finding.last_found.strftime('%Y-%m-%d') if finding.last_found else 'N/A' }}</td>
-                <td>
-                    {% if finding.state == 'FIXED' %}
-                        <span class="badge badge-success">FIXED</span>
-                    {% elif finding.state == 'REOPENED' %}
-                        <span class="badge badge-warning">REOPENED</span>
+                    {% if finding.status == 'Open' %}
+                        <span class="badge badge-danger">OPEN</span>
+                    {% elif finding.status in ['Closed', 'Resolved', 'Fixed'] %}
+                        <span class="badge badge-success">{{ finding.status|upper }}</span>
                     {% else %}
-                        <span class="badge badge-danger">{{ finding.state or 'OPEN' }}</span>
+                        <span class="badge badge-warning">{{ finding.status or 'UNKNOWN' }}</span>
                     {% endif %}
                 </td>
+                <td>
+                    {{ finding.created_at.strftime('%Y-%m-%d') if finding.created_at else 'N/A' }}
+                    {% if finding.updated_at and finding.updated_at != finding.created_at %}
+                    <br><small class="text-muted">Updated: {{ finding.updated_at.strftime('%Y-%m-%d') }}</small>
+                    {% endif %}
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-info" 
+                            data-toggle="modal" 
+                            data-target="#findingModal{{ finding.id }}"
+                            title="View Details">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <a href="{{ url_for('export.export_cloud_finding_txt', finding_id=finding.id) }}" 
+                       class="btn btn-sm btn-secondary ml-1"
+                       title="Export to TXT">
+                        <i class="fas fa-file-download"></i>
+                    </a>
+                </td>
             </tr>
+
+            <!-- Finding Detail Modal - FIXED COLORS -->
+            <div class="modal fade" id="findingModal{{ finding.id }}" tabindex="-1" role="dialog">
+                <div class="modal-dialog modal-lg" role="document">
+                    <div class="modal-content" style="background-color: #ffffff; color: #212529;">
+                        <div class="modal-header" style="background-color: #f8f9fa; border-bottom: 1px solid #dee2e6;">
+                            <h5 class="modal-title" style="color: #212529;">
+                                <i class="fas fa-shield-alt"></i> 
+                                {{ finding.title or 'Cloud Security Finding' }}
+                            </h5>
+                            <button type="button" class="close" data-dismiss="modal" style="color: #000;">
+                                <span>&times;</span>
+                            </button>
+                        </div>
+                        <div class="modal-body" style="background-color: #ffffff; color: #212529;">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <strong style="color: #495057;">Resource:</strong> 
+                                    <span style="color: #212529;">{{ finding.resource_name or 'Unknown' }}</span>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong style="color: #495057;">Provider:</strong> 
+                                    {% if finding.cloud_provider == 'AWS' %}
+                                        <i class="fab fa-aws" style="color: #FF9900;"></i> <span style="color: #212529;">AWS</span>
+                                    {% elif finding.cloud_provider == 'Azure' %}
+                                        <i class="fab fa-microsoft" style="color: #0078D4;"></i> <span style="color: #212529;">Azure</span>
+                                    {% elif finding.cloud_provider == 'GCP' %}
+                                        <i class="fab fa-google" style="color: #4285F4;"></i> <span style="color: #212529;">GCP</span>
+                                    {% else %}
+                                        <span style="color: #212529;">{{ finding.cloud_provider or 'Unknown' }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <strong style="color: #495057;">Severity:</strong> 
+                                    {% if finding.severity == 'Critical' %}
+                                        <span class="badge badge-danger">CRITICAL</span>
+                                    {% elif finding.severity == 'High' %}
+                                        <span class="badge badge-warning" style="background-color: #ff6b6b;">HIGH</span>
+                                    {% elif finding.severity == 'Medium' %}
+                                        <span class="badge badge-warning">MEDIUM</span>
+                                    {% elif finding.severity == 'Low' %}
+                                        <span class="badge badge-info">LOW</span>
+                                    {% else %}
+                                        <span class="badge badge-secondary">{{ finding.severity or 'Unknown' }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-6">
+                                    <strong style="color: #495057;">Risk Score:</strong> 
+                                    <span style="color: #212529;">{{ finding.risk_score or 'N/A' }}</span>
+                                </div>
+                            </div>
+
+                            {% if finding.resource_id %}
+                            <div class="mb-3">
+                                <strong style="color: #495057;">Resource ID:</strong>
+                                <code style="background-color: #f8f9fa; color: #e83e8c; padding: 2px 6px; border-radius: 3px;">{{ finding.resource_id }}</code>
+                            </div>
+                            {% endif %}
+
+                            {% if finding.resource_type %}
+                            <div class="mb-3">
+                                <strong style="color: #495057;">Resource Type:</strong> 
+                                <span style="color: #212529;">{{ finding.resource_type }}</span>
+                            </div>
+                            {% endif %}
+
+                            {% if finding.resource_region %}
+                            <div class="mb-3">
+                                <strong style="color: #495057;">Region:</strong> 
+                                <span style="color: #212529;">{{ finding.resource_region }}</span>
+                            </div>
+                            {% endif %}
+
+                            {% if finding.account_id %}
+                            <div class="mb-3">
+                                <strong style="color: #495057;">Account ID:</strong> 
+                                <span style="color: #212529;">{{ finding.account_id }}</span>
+                            </div>
+                            {% endif %}
+
+                            <div class="mb-3">
+                                <strong style="color: #495057;">Policy Violated:</strong><br>
+                                <span style="color: #212529;">{{ finding.policy_violated or 'Not specified' }}</span>
+                            </div>
+
+                            <div class="mb-3">
+                                <strong style="color: #495057;">Description:</strong><br>
+                                <p style="color: #212529; margin-top: 8px;">{{ finding.description or 'No description available' }}</p>
+                            </div>
+
+                            {% if finding.remediation %}
+                            <div class="mb-3">
+                                <strong style="color: #495057;">Remediation:</strong><br>
+                                <div class="alert alert-info" style="background-color: #d1ecf1; border-color: #bee5eb; color: #0c5460; margin-top: 8px;">
+                                    {{ finding.remediation }}
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            {% if finding.compliance_frameworks %}
+                            <div class="mb-3">
+                                <strong style="color: #495057;">Compliance Frameworks:</strong><br>
+                                {% for framework in finding.compliance_frameworks %}
+                                    <span class="badge badge-secondary" style="margin-top: 4px;">{{ framework }}</span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <strong style="color: #495057;">Created:</strong> 
+                                    <span style="color: #212529;">{{ finding.created_at.strftime('%Y-%m-%d %H:%M UTC') if finding.created_at else 'N/A' }}</span>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong style="color: #495057;">Last Updated:</strong> 
+                                    <span style="color: #212529;">{{ finding.updated_at.strftime('%Y-%m-%d %H:%M UTC') if finding.updated_at else 'N/A' }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer" style="background-color: #f8f9fa; border-top: 1px solid #dee2e6;">
+                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             {% else %}
             <tr>
                 <td colspan="7" class="text-center">
-                    <i class="fas fa-search"></i> No cloud asset vulnerabilities found.
-                    <br><br>
-                    <div class="alert alert-info d-inline-block text-left" style="max-width: 500px;">
-                        <strong>Finding Cloud Assets:</strong>
-                        <ol class="mb-0 mt-2">
-                            <li>Ensure cloud assets are being scanned by Tenable</li>
-                            <li>Verify cloud discovery/connector configuration</li>
-                            <li>Check if assets have cloud provider tags</li>
-                            <li>Try broader filters (All Time, Include Info)</li>
-                        </ol>
+                    <div class="py-5">
+                        <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                        <h5>No cloud security findings found</h5>
+                        <p class="text-muted">Try adjusting your filters or check the data ingestion status.</p>
+                        <a href="{{ url_for('main.cloud_findings') }}" class="btn btn-primary mt-3">
+                            <i class="fas fa-redo"></i> Reset Filters
+                        </a>
                     </div>
                 </td>
             </tr>
@@ -211,21 +420,21 @@
     </table>
 </div>
 
-<!-- Debug Information -->
+<!-- Integration Status -->
 <div class="alert alert-secondary mt-4">
-    <h6><i class="fas fa-info-circle"></i> Cloud Integration Status</h6>
+    <h6><i class="fas fa-info-circle"></i> Tenable Cloud Security Integration Status</h6>
     <div class="row">
         <div class="col-md-3">
-            <strong>Cloud Findings:</strong> {{ cloud_findings|length }}
+            <strong>Total Findings:</strong> {{ cloud_stats.total or 0 }}
         </div>
         <div class="col-md-3">
-            <strong>Data Source:</strong> Embedded in VM scans
+            <strong>Data Source:</strong> Tenable Cloud Security (Ermetic)
         </div>
         <div class="col-md-3">
-            <strong>Detection Method:</strong> Asset metadata + tags
+            <strong>Open Findings:</strong> {{ cloud_stats.total - (cloud_stats.closed or 0) }}
         </div>
         <div class="col-md-3">
-            <strong>Last Updated:</strong> Live from database
+            <strong>Last Sync:</strong> Real-time from database
         </div>
     </div>
 </div>
@@ -235,28 +444,31 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Add tooltips
+    // Initialize Bootstrap tooltips
     if (typeof $ !== 'undefined' && $.fn.tooltip) {
-        $('[title]').tooltip();
+        $('[data-toggle="tooltip"]').tooltip();
     }
     
-    // Add click-to-copy for cloud instance IDs
-    document.querySelectorAll('.badge').forEach(badge => {
-        if (badge.textContent.includes('i-') || badge.textContent.includes('vm-') || badge.textContent.includes('instance-')) {
-            badge.style.cursor = 'pointer';
-            badge.title = 'Click to copy instance ID';
-            badge.addEventListener('click', function() {
-                if (navigator.clipboard) {
-                    const text = this.textContent.replace(/^[\w\s]*\s/, ''); // Remove icon and provider name
-                    navigator.clipboard.writeText(text);
-                    this.style.backgroundColor = '#28a745';
-                    setTimeout(() => {
-                        this.style.backgroundColor = '';
-                    }, 1000);
-                }
-            });
-        }
+    // Add click-to-copy for resource IDs
+    document.querySelectorAll('code').forEach(code => {
+        code.style.cursor = 'pointer';
+        code.title = 'Click to copy';
+        code.addEventListener('click', function() {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(this.textContent);
+                const original = this.style.backgroundColor;
+                this.style.backgroundColor = '#28a745';
+                this.style.color = 'white';
+                setTimeout(() => {
+                    this.style.backgroundColor = original;
+                    this.style.color = '';
+                }, 1000);
+            }
+        });
     });
+
+    // Auto-refresh indicator (optional)
+    console.log('Cloud Security Findings loaded: {{ cloud_findings|length }} findings');
 });
 </script>
 {% endblock %}
