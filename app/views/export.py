@@ -868,7 +868,19 @@ def export_cloud_findings_csv():
         
         # Write data
         for finding in findings:
-            frameworks = ', '.join(finding.compliance_frameworks) if finding.compliance_frameworks else ''
+            # Fix: compliance_frameworks might be a JSON string, not a list
+            frameworks = finding.compliance_frameworks
+            if isinstance(frameworks, str):
+                try:
+                    import json
+                    frameworks = json.loads(frameworks)
+                    frameworks_str = ', '.join(frameworks)
+                except:
+                    frameworks_str = frameworks
+            elif isinstance(frameworks, list):
+                frameworks_str = ', '.join(frameworks)
+            else:
+                frameworks_str = ''
             
             writer.writerow([
                 finding.finding_id,
@@ -880,11 +892,11 @@ def export_cloud_findings_csv():
                 finding.cloud_provider,
                 finding.resource_name,
                 finding.resource_type,
-                finding.resource_region,
+                finding.region,  # Changed from resource_region
                 finding.account_id,
                 finding.created_at.strftime('%Y-%m-%d %H:%M') if finding.created_at else '',
                 finding.updated_at.strftime('%Y-%m-%d %H:%M') if finding.updated_at else '',
-                frameworks,
+                frameworks_str,
                 finding.description or '',
                 finding.remediation or ''
             ])
@@ -995,8 +1007,8 @@ def export_cloud_findings_txt():
             
             if finding.resource_type:
                 output.write(f"Resource Type:     {finding.resource_type}\n")
-            if finding.resource_region:
-                output.write(f"Region:            {finding.resource_region}\n")
+            if finding.region:  # FIXED: Changed from resource_region
+                output.write(f"Region:            {finding.region}\n")
             if finding.account_id:
                 output.write(f"Account ID:        {finding.account_id}\n")
             if finding.resource_id:
@@ -1033,7 +1045,16 @@ def export_cloud_findings_txt():
                 output.write("-" * 80 + "\n")
                 output.write("COMPLIANCE FRAMEWORKS:\n")
                 output.write("-" * 80 + "\n")
-                for framework in finding.compliance_frameworks:
+                # Fix: compliance_frameworks might be a JSON string, not a list
+                frameworks = finding.compliance_frameworks
+                if isinstance(frameworks, str):
+                    try:
+                        import json
+                        frameworks = json.loads(frameworks)
+                    except:
+                        frameworks = [frameworks]
+                
+                for framework in frameworks:
                     output.write(f"  - {framework}\n")
                 output.write("\n")
             
@@ -1083,8 +1104,8 @@ def export_cloud_finding_txt(finding_id):
         
         if finding.resource_type:
             output.write(f"Resource Type:     {finding.resource_type}\n")
-        if finding.resource_region:
-            output.write(f"Region:            {finding.resource_region}\n")
+        if finding.region:  # FIXED: Changed from resource_region
+            output.write(f"Region:            {finding.region}\n")
         if finding.account_id:
             output.write(f"Account ID:        {finding.account_id}\n")
         if finding.resource_id:
@@ -1121,7 +1142,16 @@ def export_cloud_finding_txt(finding_id):
             output.write("-" * 80 + "\n")
             output.write("COMPLIANCE FRAMEWORKS:\n")
             output.write("-" * 80 + "\n")
-            for framework in finding.compliance_frameworks:
+            # Fix: compliance_frameworks might be a JSON string, not a list
+            frameworks = finding.compliance_frameworks
+            if isinstance(frameworks, str):
+                try:
+                    import json
+                    frameworks = json.loads(frameworks)
+                except:
+                    frameworks = [frameworks]
+            
+            for framework in frameworks:
                 output.write(f"  - {framework}\n")
             output.write("\n")
         
