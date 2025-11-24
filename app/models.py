@@ -294,7 +294,7 @@ class PluginComplianceMapping(db.Model):
 
 
 class CloudFinding(db.Model):
-    """Model for cloud security findings from Ermetic"""
+    """Model for cloud security findings from Tenable Cloud Security (Ermetic)"""
     
     __tablename__ = 'cloud_findings'
     
@@ -305,22 +305,27 @@ class CloudFinding(db.Model):
     # Finding details
     title = db.Column(String(500))
     description = db.Column(Text)
-    severity = db.Column(String(50))  # critical, high, medium, low, info
-    status = db.Column(String(50))    # active, resolved, suppressed, in_progress
+    severity = db.Column(String(50))  # Critical, High, Medium, Low
+    status = db.Column(String(50))    # Open, Closed, Resolved, Suppressed
     
     # Cloud resource details
-    cloud_provider = db.Column(String(50))  # aws, azure, gcp
-    resource_type = db.Column(String(100))  # S3Bucket, EC2Instance, IAMRole, etc.
-    resource_id = db.Column(String(500))    # Cloud resource identifier
-    region = db.Column(String(100))         # us-east-1, westus, etc.
-    account_id = db.Column(String(100))     # AWS Account, Azure Subscription, GCP Project
+    cloud_provider = db.Column(String(50))      # AWS, Azure, GCP
+    resource_type = db.Column(String(100))      # S3Bucket, EC2Instance, IAMRole, etc.
+    resource_id = db.Column(String(500))        # Cloud resource identifier (ARN, etc.)
+    resource_name = db.Column(String(500))      # Human-readable resource name
+    region = db.Column(String(100))             # us-east-1, westus, etc.
+    account_id = db.Column(String(100))         # AWS Account, Azure Subscription, GCP Project
+    
+    # Policy and compliance
+    policy_violated = db.Column(String(500))    # Policy name that was violated
+    compliance_frameworks = db.Column(Text)     # JSON list of compliance frameworks
     
     # Risk and categorization
-    risk_score = db.Column(Float)           # 0-10 risk score
-    category = db.Column(String(100))       # misconfiguration, vulnerability, compliance, exposure
+    risk_score = db.Column(Float)               # 0-10 risk score
+    category = db.Column(String(100))           # misconfiguration, vulnerability, compliance
     
     # Remediation
-    remediation = db.Column(Text)           # Remediation steps
+    remediation = db.Column(Text)               # Remediation steps
     
     # Timestamps
     first_detected_at = db.Column(DateTime)
@@ -336,10 +341,11 @@ class CloudFinding(db.Model):
     record_updated_at = db.Column(DateTime, default=func.now(), onupdate=func.now())
     
     def __repr__(self):
-        return f'<CloudFinding {self.finding_id}: {self.title} ({self.severity})>'
+        return f'<CloudFinding {self.finding_id}: {self.title} ({self.severity} - {self.cloud_provider})>'
     
     def to_dict(self):
         """Convert finding to dictionary"""
+        import json
         return {
             'id': self.id,
             'finding_id': self.finding_id,
@@ -350,8 +356,11 @@ class CloudFinding(db.Model):
             'cloud_provider': self.cloud_provider,
             'resource_type': self.resource_type,
             'resource_id': self.resource_id,
+            'resource_name': self.resource_name,
             'region': self.region,
             'account_id': self.account_id,
+            'policy_violated': self.policy_violated,
+            'compliance_frameworks': json.loads(self.compliance_frameworks) if self.compliance_frameworks else [],
             'risk_score': self.risk_score,
             'category': self.category,
             'remediation': self.remediation,
