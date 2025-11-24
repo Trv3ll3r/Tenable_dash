@@ -30,14 +30,22 @@ def create_app(config_class=Config):
     # Register blueprints
     from app.views.main import main_bp
     from app.views.export import export_bp
+    from app.views.pdf_generator import pdf_bp
     
     app.register_blueprint(main_bp)
     app.register_blueprint(export_bp, url_prefix='/export')
+    app.register_blueprint(pdf_bp)
     
     # Print startup information
     print(f"✅ Database: {app.config['DATABASE_FILE']}")
     print(f"✅ Enabled features: {', '.join(FeatureFlags.get_enabled_features())}")
     print(f"✅ Server will start on {app.config['HOST']}:{app.config['PORT']}")
+    
+    # Log registered blueprints (Windows-compatible, no Unicode characters)
+    app.logger.info("Registered blueprints:")
+    app.logger.info(f"  [OK] {main_bp.name}")
+    app.logger.info(f"  [OK] {export_bp.name}")
+    app.logger.info(f"  [OK] {pdf_bp.name}")
     
     return app
 
@@ -50,8 +58,8 @@ def setup_logging(app):
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    # File handler
-    file_handler = logging.FileHandler(app.config['LOG_FILE'])
+    # File handler with UTF-8 encoding for Windows compatibility
+    file_handler = logging.FileHandler(app.config['LOG_FILE'], encoding='utf-8')
     file_handler.setLevel(log_level)
     file_handler.setFormatter(formatter)
     
