@@ -1,6 +1,7 @@
 """
 Data Ingestion Service - Orchestrates data collection from Tenable APIs and Ermetic
 Updated to include cloud security findings from Ermetic
+FIXED: Proper ErmeticClient integration with generator handling and NO LIMIT
 """
 
 import os
@@ -46,8 +47,8 @@ def run_full_ingestion(days_since=None, test_limit=None):
         # Ingest attack path findings
         attack_path_count = ingest_attack_path_findings(tenable_client)
         
-        # Ingest cloud security findings from Ermetic (NEW!)
-        cloud_count = ingest_cloud_findings(tenable_client, days_since)
+        # Ingest cloud security findings from Ermetic (FIXED!)
+        cloud_count = ingest_cloud_findings(days_since)
         
         # Ingest GRC data
         grc_count = ingest_grc_mappings()
@@ -178,12 +179,13 @@ def ingest_attack_path_findings(tenable_client):
         return 0
 
 
-def ingest_cloud_findings(tenable_client, days_since=30):
+def ingest_cloud_findings(days_since=30):
     """
-    Ingest cloud security findings from Ermetic
+    Ingest cloud security findings from Tenable Cloud Security (Ermetic)
+    
+    FIXED: Properly handles generator from get_cloud_findings() with NO LIMIT
     
     Args:
-        tenable_client: TenableClient instance (which includes Ermetic client)
         days_since: Number of days to look back
         
     Returns:
@@ -194,8 +196,8 @@ def ingest_cloud_findings(tenable_client, days_since=30):
         print("⏭️  Skipping cloud findings (disabled)")
         return 0
     
-    # Check if Ermetic is available
-    if not tenable_client.has_ermetic:
+    # Check if Ermetic credentials are configured
+    if not os.getenv('ERMETIC_API_TOKEN'):
         current_app.logger.info("Ermetic API not configured - skipping cloud findings")
         print("ℹ️  Ermetic API not configured - skipping cloud findings")
         print("   To enable: Set ERMETIC_API_URL and ERMETIC_API_TOKEN in .env")
@@ -206,31 +208,102 @@ def ingest_cloud_findings(tenable_client, days_since=30):
     
     count_processed = 0
     count_saved = 0
+    count_errors = 0
     
     try:
-        for finding_data in tenable_client.fetch_cloud_findings(days_since=days_since):
+        # Import ErmeticClient directly
+        from app.ermetic_client import ErmeticClient
+        from datetime import datetime, timedelta, timezone
+        
+        # Create Ermetic client
+        current_app.logger.info("Creating Ermetic API client...")
+        print("🔧 Initializing Ermetic client...")
+        ermetic_client = ErmeticClient()
+        
+        # Test connection
+        current_app.logger.info("Testing Ermetic API connection...")
+        print("🔗 Testing Ermetic API connection...")
+        
+        if not ermetic_client.test_connection():
+            current_app.logger.error("Ermetic connection test failed")
+            print("❌ Ermetic connection test failed")
+            return 0
+        
+        current_app.logger.info("✅ Ermetic connection successful!")
+        print("✅ Ermetic API connection successful")
+        
+        # Get total count first
+        stats = ermetic_client.get_finding_statistics()
+        total_available = stats.get('total_count', 0)
+        print(f"📊 Total findings available in Ermetic: {total_available:,}")
+        
+        # Calculate since date
+        since_date = datetime.now(timezone.utc) - timedelta(days=days_since)
+        current_app.logger.info(f"Fetching cloud findings since: {since_date.isoformat()}")
+        print(f"📅 Fetching findings from last {days_since} days (all statuses)...")
+        print(f"⚠️  This may take several minutes for {total_available:,} findings...")
+        
+        # FIXED: get_cloud_findings() returns a GENERATOR, not a list
+        # Process findings as they come in (no limit!)
+        current_app.logger.info("Starting to process cloud findings...")
+        
+        for finding_data in ermetic_client.get_cloud_findings(since_date=since_date):
             count_processed += 1
             
-            if CloudFindingProcessor.process_finding(finding_data):
-                count_saved += 1
+            try:
+                # Use CloudFindingProcessor to save the finding
+                if CloudFindingProcessor.process_finding(finding_data):
+                    count_saved += 1
+                else:
+                    count_errors += 1
+            except Exception as e:
+                count_errors += 1
+                current_app.logger.error(f"Error processing finding {count_processed}: {e}")
             
-            # Progress update
+            # Progress update and batch commit every 100 findings
             if count_processed % 100 == 0:
-                print(f"📊 Processed {count_processed} cloud findings, saved {count_saved}...")
-                db.session.commit()  # Commit batch
-                
-        db.session.commit()  # Final commit
+                print(f"📊 Processed {count_processed:,} findings, saved {count_saved:,}...")
+                try:
+                    db.session.commit()  # Commit batch
+                except Exception as e:
+                    current_app.logger.error(f"Error committing batch: {e}")
+                    db.session.rollback()
+            
+            # Progress milestone every 1000
+            if count_processed % 1000 == 0:
+                print(f"🎯 MILESTONE: {count_processed:,} findings processed ({count_saved:,} saved, {count_errors} errors)")
         
-        current_app.logger.info(f"Cloud findings ingestion complete: {count_processed} processed, {count_saved} saved")
-        print(f"✅ Cloud findings: {count_processed} processed, {count_saved} saved")
+        # Final commit
+        try:
+            db.session.commit()
+        except Exception as e:
+            current_app.logger.error(f"Error in final commit: {e}")
+            db.session.rollback()
+        
+        current_app.logger.info(f"Cloud findings ingestion complete: {count_processed} processed, {count_saved} saved, {count_errors} errors")
+        print(f"\n✅ Cloud findings: {count_processed:,} processed, {count_saved:,} saved, {count_errors} errors")
+        
+        if count_errors > 0:
+            print(f"⚠️  {count_errors} findings had processing errors (check logs)")
         
         return count_saved
         
+    except ImportError as e:
+        current_app.logger.error(f"Could not import ErmeticClient: {e}")
+        print(f"❌ Error importing ErmeticClient: {e}")
+        print("   Make sure app/ermetic_client.py exists")
+        return 0
+    except ValueError as e:
+        current_app.logger.error(f"Ermetic client initialization failed: {e}")
+        print(f"❌ Ermetic client initialization failed: {e}")
+        print("   Check ERMETIC_API_URL and ERMETIC_API_TOKEN in .env")
+        return 0
     except Exception as e:
         current_app.logger.error(f"Error ingesting cloud findings: {e}")
         print(f"❌ Error ingesting cloud findings: {e}")
+        import traceback
+        traceback.print_exc()
         db.session.rollback()
-        # Don't raise - Ermetic may not be available or configured
         return 0
 
 
