@@ -1,474 +1,1046 @@
 {% extends "base.html" %}
 
-{% block title %}Cloud Security Findings - Tenable Dashboard{% endblock %}
+{% block title %}Executive Security Dashboard{% endblock %}
 
 {% block content %}
-<!-- Navigation Tabs -->
-<ul class="nav nav-tabs mb-3" id="dashboardTabs" role="tablist">
-    <li class="nav-item">
-        <a class="nav-link" href="{{ url_for('main.dashboard') }}">
-            <i class="fas fa-bug"></i> Vulnerabilities
+<style>
+    .executive-header {
+        background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 12px;
+        margin-bottom: 30px;
+        text-align: center;
+    }
+    
+    .metric-card {
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        text-align: center;
+        transition: transform 0.3s;
+        margin-bottom: 20px;
+    }
+    
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    }
+    
+    .metric-card h3 {
+        color: #34495e;
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        margin-bottom: 15px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+    }
+    
+    .metric-value {
+        font-size: 3rem;
+        font-weight: bold;
+        color: #2c3e50;
+        margin: 10px 0;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    
+    .metric-card.critical .metric-value { color: #c0392b; }
+    .metric-card.high .metric-value { color: #d35400; }
+    .metric-card.cloud .metric-value { color: #3498db; }
+    
+    .metric-trend {
+        font-size: 1rem;
+        margin-top: 10px;
+        color: #34495e;
+        font-weight: 600;
+    }
+    
+    .trend-up { color: #c0392b; font-weight: 700; }
+    .trend-down { color: #229954; font-weight: 700; }
+    
+    .chart-container {
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+    
+    .chart-container h3 {
+        color: #2c3e50;
+        font-weight: 700;
+        margin-bottom: 15px;
+        font-size: 1.3rem;
+    }
+    
+    .grc-framework-card {
+        background: linear-gradient(135deg, #2980b9 0%, #1f618d 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .grc-framework-card h4 {
+        margin: 0 0 10px 0;
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: white;
+    }
+    
+    .grc-stat {
+        display: inline-block;
+        margin-right: 20px;
+        font-size: 1rem;
+        color: white;
+        font-weight: 600;
+    }
+    
+    .grc-stat strong {
+        font-weight: 800;
+        color: white;
+    }
+    
+    .nist-spotlight {
+        background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
+        border: 3px solid #f39c12;
+        color: white;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+    }
+    
+    .nist-spotlight h3 {
+        color: white !important;
+        font-size: 1.5rem;
+        margin-bottom: 20px;
+    }
+    
+    .nist-metric {
+        text-align: center;
+        padding: 20px;
+        background: rgba(255,255,255,0.1);
+        border-radius: 8px;
+        transition: all 0.3s;
+    }
+    
+    .nist-metric:hover {
+        background: rgba(255,255,255,0.15);
+        transform: translateY(-3px);
+    }
+    
+    .nist-metric h2 {
+        font-size: 2.5rem;
+        font-weight: 800;
+        margin-bottom: 5px;
+    }
+    
+    .nist-metric p {
+        color: #ecf0f1 !important;
+        font-weight: 600;
+        margin: 0;
+    }
+    
+    .risk-gauge {
+        width: 200px;
+        height: 200px;
+        margin: 0 auto;
+        position: relative;
+    }
+    
+    .pdf-export-btn {
+        background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        color: white;
+        border: none;
+        padding: 12px 30px;
+        border-radius: 8px;
+        font-weight: 700;
+        font-size: 1.1rem;
+        text-decoration: none;
+        display: inline-block;
+        transition: transform 0.3s;
+    }
+    
+    .pdf-export-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+        color: white;
+        text-decoration: none;
+    }
+    
+    .text-danger { color: #c0392b !important; font-weight: 700; }
+    .text-warning { color: #d68910 !important; font-weight: 700; }
+    .text-success { color: #229954 !important; font-weight: 700; }
+    
+    .table {
+        color: #2c3e50;
+    }
+    
+    .table thead th {
+        background-color: #34495e;
+        color: white;
+        font-weight: 700;
+        border: none;
+    }
+    
+    .table tbody td {
+        font-weight: 500;
+        color: #34495e;
+    }
+    
+    .table tbody td strong {
+        color: #2c3e50;
+        font-weight: 700;
+    }
+    
+    .badge-critical {
+        background-color: #c0392b;
+        color: white;
+        font-weight: 700;
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    .badge-high {
+        background-color: #d35400;
+        color: white;
+        font-weight: 700;
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    .badge-medium {
+        background-color: #d68910;
+        color: white;
+        font-weight: 700;
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    .badge-low {
+        background-color: #2874a6;
+        color: white;
+        font-weight: 700;
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+    
+    .cloud-provider-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 0.8rem;
+    }
+    
+    .cloud-provider-badge.aws {
+        background: #FF9900;
+        color: white;
+    }
+    
+    .cloud-provider-badge.azure {
+        background: #0089D6;
+        color: white;
+    }
+    
+    .cloud-provider-badge.gcp {
+        background: #4285F4;
+        color: white;
+    }
+</style>
+
+<!-- Header with PDF Export -->
+<div class="executive-header">
+    <h1><i class="fas fa-chart-line"></i> Executive Security Dashboard</h1>
+    <p style="margin: 10px 0 0 0; font-size: 1.1rem; font-weight: 500;">Security Posture Overview | {{ data.generated_at }}</p>
+    <div style="margin-top: 20px;">
+        <a href="{{ url_for('pdf.executive_dashboard_pdf') }}" class="pdf-export-btn">
+            <i class="fas fa-file-pdf"></i> Export to PDF
         </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="{{ url_for('main.grouped_findings') }}">
-            <i class="fas fa-layer-group"></i> Grouped View
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link" href="{{ url_for('main.was_findings') }}">
-            <i class="fas fa-globe"></i> Web App Security
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link active">
-            <i class="fas fa-cloud"></i> Cloud Security ({{ cloud_findings|length }})
-        </a>
-    </li>
-</ul>
-
-<!-- Control Panel -->
-<div class="control-panel">
-    <form method="GET" class="form-inline justify-content-between">
-        <div class="form-group mr-3">
-            <label for="cloud_provider" class="mr-2 text-white">
-                <i class="fas fa-cloud"></i> Provider:
-            </label>
-            <select name="cloud_provider" id="cloud_provider" class="form-control form-control-sm">
-                <option value="all" {% if selected_cloud_provider == 'all' or not selected_cloud_provider %}selected{% endif %}>All Providers</option>
-                {% for provider in available_providers %}
-                <option value="{{ provider|lower }}" {% if selected_cloud_provider == provider|lower %}selected{% endif %}>{{ provider }}</option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div class="form-group mr-3">
-            <label for="severity" class="mr-2 text-white">
-                <i class="fas fa-exclamation-triangle"></i> Severity:
-            </label>
-            <select name="severity" id="severity" class="form-control form-control-sm">
-                <option value="all" {% if selected_severity == 'all' or not selected_severity %}selected{% endif %}>All Severities</option>
-                <option value="critical" {% if selected_severity == 'critical' %}selected{% endif %}>Critical Only</option>
-                <option value="high" {% if selected_severity == 'high' %}selected{% endif %}>High Only</option>
-                <option value="medium" {% if selected_severity == 'medium' %}selected{% endif %}>Medium Only</option>
-                <option value="low" {% if selected_severity == 'low' %}selected{% endif %}>Low Only</option>
-            </select>
-        </div>
-
-        <div class="form-group mr-3">
-            <label for="status" class="mr-2 text-white">
-                <i class="fas fa-check-circle"></i> Status:
-            </label>
-            <select name="status" id="status" class="form-control form-control-sm">
-                <option value="open" {% if selected_status == 'open' or not selected_status %}selected{% endif %}>Open Only</option>
-                <option value="closed" {% if selected_status == 'closed' %}selected{% endif %}>Closed/Fixed</option>
-                <option value="all" {% if selected_status == 'all' %}selected{% endif %}>All Statuses</option>
-            </select>
-        </div>
-
-        <div class="form-group mr-3">
-            <label for="time_period" class="mr-2 text-white">
-                <i class="fas fa-calendar-alt"></i> Period:
-            </label>
-            <select name="time_period" id="time_period" class="form-control form-control-sm">
-                <option value="30_days" {% if selected_time_period == '30_days' or not selected_time_period %}selected{% endif %}>Last 30 Days</option>
-                <option value="7_days" {% if selected_time_period == '7_days' %}selected{% endif %}>Last 7 Days</option>
-                <option value="all" {% if selected_time_period == 'all' %}selected{% endif %}>All Time</option>
-            </select>
-        </div>
-
-        <div>
-            <button type="submit" class="btn btn-primary btn-sm">
-                <i class="fas fa-filter"></i> Apply Filters
-            </button>
-            <a href="{{ url_for('main.cloud_findings') }}" class="btn btn-secondary btn-sm ml-2">
-                <i class="fas fa-redo"></i> Reset
-            </a>
-            <a href="{{ url_for('export.export_cloud_findings_csv', cloud_provider=selected_cloud_provider or 'all', severity=selected_severity or 'all', status=selected_status or 'open') }}" 
-               class="btn btn-success btn-sm ml-2">
-                <i class="fas fa-file-csv"></i> Export CSV
-            </a>
-            <a href="{{ url_for('export.export_cloud_findings_txt', cloud_provider=selected_cloud_provider or 'all', severity=selected_severity or 'all', status=selected_status or 'open') }}" 
-               class="btn btn-info btn-sm ml-2">
-                <i class="fas fa-file-alt"></i> Export TXT
-            </a>
-        </div>
-    </form>
+    </div>
 </div>
 
-<!-- Cloud Provider Stats -->
-<div class="row mb-3">
-    <div class="col-md-2">
+<!-- Key Metrics Grid -->
+<div class="row mb-4">
+    <div class="col-lg-2 col-md-4 mb-3">
+        <div class="metric-card critical">
+            <h3>Critical Findings</h3>
+            <div class="metric-value">{{ data.summary.critical_findings }}</div>
+            <div class="metric-trend">Immediate Action Required</div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 mb-3">
+        <div class="metric-card high">
+            <h3>High Priority</h3>
+            <div class="metric-value">{{ data.summary.high_findings }}</div>
+            <div class="metric-trend">Urgent Remediation</div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 mb-3">
         <div class="metric-card">
-            <h6><i class="fas fa-shield-alt"></i> Total Findings</h6>
-            <div class="count" style="font-size: 2rem;">{{ cloud_stats.total or 0 }}</div>
+            <h3>Total Findings</h3>
+            <div class="metric-value">{{ data.summary.total_findings }}</div>
+            <div class="metric-trend {% if data.trends.total < 0 %}trend-down{% else %}trend-up{% endif %}">
+                {{ '%+.1f'|format(data.trends.total) }}% vs Last Period
+            </div>
         </div>
     </div>
-    <div class="col-md-2">
+    <div class="col-lg-2 col-md-4 mb-3">
         <div class="metric-card">
-            <h6><i class="fab fa-aws"></i> AWS</h6>
-            <div class="count" style="font-size: 2rem;">{{ cloud_stats.aws or 0 }}</div>
+            <h3>Assets Under Management</h3>
+            <div class="metric-value">{{ data.summary.total_assets }}</div>
+            <div class="metric-trend">{{ data.summary.critical_assets }} with Critical Issues</div>
         </div>
     </div>
-    <div class="col-md-2">
-        <div class="metric-card">
-            <h6><i class="fab fa-microsoft"></i> Azure</h6>
-            <div class="count" style="font-size: 2rem;">{{ cloud_stats.azure or 0 }}</div>
+    <div class="col-lg-2 col-md-4 mb-3">
+        <div class="metric-card cloud">
+            <h3>Cloud Findings</h3>
+            <div class="metric-value">{{ data.cloud_summary.total_findings if data.cloud_summary else 0 }}</div>
+            <div class="metric-trend">Cloud Security Issues</div>
         </div>
     </div>
-    <div class="col-md-2">
-        <div class="metric-card">
-            <h6><i class="fab fa-google"></i> GCP</h6>
-            <div class="count" style="font-size: 2rem;">{{ cloud_stats.gcp or 0 }}</div>
-        </div>
-    </div>
-    <div class="col-md-2">
-        <div class="metric-card severity-critical">
-            <h6><i class="fas fa-exclamation-circle"></i> Critical</h6>
-            <div class="count" style="font-size: 2rem;">{{ cloud_stats.critical or 0 }}</div>
-        </div>
-    </div>
-    <div class="col-md-2">
-        <div class="metric-card severity-high">
-            <h6><i class="fas fa-exclamation-triangle"></i> High</h6>
-            <div class="count" style="font-size: 2rem;">{{ cloud_stats.high or 0 }}</div>
+    <div class="col-lg-2 col-md-4 mb-3">
+        <div class="metric-card cloud">
+            <h3>Cloud Resources</h3>
+            <div class="metric-value">{{ data.cloud_summary.total_resources if data.cloud_summary else 0 }}</div>
+            <div class="metric-trend">Multi-Cloud Assets</div>
         </div>
     </div>
 </div>
 
-<!-- Cloud Security Info Alert -->
-{% if cloud_findings|length == 0 %}
-<div class="alert alert-warning">
-    <i class="fas fa-exclamation-triangle"></i> 
-    <strong>No cloud security findings found.</strong> 
-    <br>This could mean:
-    <ul class="mb-0 mt-2">
-        <li>No findings detected by Tenable Cloud Security (Ermetic)</li>
-        <li>Current filters exclude all findings</li>
-        <li>Cloud Security integration requires proper API credentials</li>
-        <li>Data ingestion may need to be triggered</li>
-    </ul>
-    <div class="mt-3">
-        <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary btn-sm">
-            <i class="fas fa-arrow-left"></i> Back to Dashboard
-        </a>
+<!-- Risk Score, Compliance Score, and Trend -->
+<div class="row mb-4">
+    <div class="col-lg-4 mb-3">
+        <div class="chart-container text-center">
+            <h3>Risk Score</h3>
+            <div class="risk-gauge">
+                <canvas id="riskGauge"></canvas>
+            </div>
+            <h2 class="mt-3" style="color: {% if data.risk_score > 70 %}#c0392b{% elif data.risk_score > 40 %}#d68910{% else %}#229954{% endif %}; font-weight: 800;">
+                {{ '%.0f'|format(data.risk_score) }}/100
+            </h2>
+            <p style="font-weight: 600; color: #34495e;">{% if data.risk_score > 70 %}High Risk{% elif data.risk_score > 40 %}Moderate Risk{% else %}Low Risk{% endif %}</p>
+        </div>
     </div>
-</div>
-{% else %}
-<div class="alert alert-success">
-    <i class="fas fa-check-circle"></i> 
-    <strong>Showing {{ cloud_findings|length }} cloud security findings</strong> from Tenable Cloud Security.
-</div>
-{% endif %}
-
-<!-- Cloud Findings Table -->
-<div class="table-container">
-    <table class="table table-hover table-sm">
-        <thead>
-            <tr>
-                <th><i class="fas fa-shield-alt"></i> Policy / Finding</th>
-                <th><i class="fas fa-cloud"></i> Resource</th>
-                <th><i class="fas fa-exclamation-triangle"></i> Severity</th>
-                <th><i class="fas fa-tachometer-alt"></i> Risk Score</th>
-                <th><i class="fas fa-check-circle"></i> Status</th>
-                <th><i class="fas fa-calendar-alt"></i> Created</th>
-                <th><i class="fas fa-tools"></i> Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for finding in cloud_findings %}
-            <tr>
-                <td>
-                    <strong>{{ finding.title or finding.policy_violated or 'Cloud Security Finding' }}</strong>
-                    <br>
-                    <small class="text-muted">
-                        <i class="fas fa-file-alt"></i> {{ finding.policy_violated or 'Policy Violation' }}
-                    </small>
-                    {% if finding.compliance_frameworks %}
-                    <br>
-                    {% for framework in finding.compliance_frameworks[:2] %}
-                        <span class="badge badge-info badge-sm">{{ framework }}</span>
-                    {% endfor %}
+    <div class="col-lg-4 mb-3">
+        <div class="chart-container text-center">
+            <h3>Compliance Score</h3>
+            <div class="risk-gauge">
+                <canvas id="complianceGauge"></canvas>
+            </div>
+            <h2 class="mt-3" style="color: {% if data.compliance_score > 70 %}#229954{% elif data.compliance_score > 40 %}#d68910{% else %}#c0392b{% endif %}; font-weight: 800;">
+                {{ '%.0f'|format(data.compliance_score) }}/100
+            </h2>
+            <p style="font-weight: 600; color: #34495e;">{% if data.grc_stats.frameworks_affected > 0 %}{{ data.grc_stats.frameworks_affected }} Frameworks Affected{% else %}No Framework Data{% endif %}</p>
+        </div>
+    </div>
+    <div class="col-lg-4 mb-3">
+        <div class="chart-container">
+            <h3>30-Day Trend Analysis</h3>
+            <div class="text-center mt-4">
+                <div style="font-size: 1.2rem; color: #34495e; margin-bottom: 20px;">
+                    Findings have 
+                    {% if data.trends.total < 0 %}
+                        <span class="text-success" style="font-size: 2rem; font-weight: 800;">decreased by {{ '%.1f'|format(data.trends.total|abs) }}%</span>
+                    {% else %}
+                        <span class="text-danger" style="font-size: 2rem; font-weight: 800;">increased by {{ '%.1f'|format(data.trends.total) }}%</span>
                     {% endif %}
-                </td>
-                <td>
-                    <div>
-                        <strong>{{ finding.resource_name or 'Unknown Resource' }}</strong>
-                        <br>
-                        {% if finding.cloud_provider == 'AWS' %}
-                            <span class="badge badge-warning">
-                                <i class="fab fa-aws"></i> AWS
-                            </span>
-                        {% elif finding.cloud_provider == 'Azure' %}
-                            <span class="badge badge-info">
-                                <i class="fab fa-microsoft"></i> Azure
-                            </span>
-                        {% elif finding.cloud_provider == 'GCP' %}
-                            <span class="badge badge-success">
-                                <i class="fab fa-google"></i> GCP
-                            </span>
-                        {% else %}
-                            <span class="badge badge-secondary">
-                                <i class="fas fa-cloud"></i> {{ finding.cloud_provider or 'Unknown' }}
-                            </span>
-                        {% endif %}
-                        <br>
-                        <small class="text-muted">
-                            {% if finding.resource_type %}
-                            <i class="fas fa-tag"></i> {{ finding.resource_type }}
-                            <br>
-                            {% endif %}
-                            {% if finding.resource_region %}
-                            <i class="fas fa-map-marker-alt"></i> {{ finding.resource_region }}
-                            {% endif %}
-                        </small>
+                </div>
+                <hr>
+                <div style="margin-top: 15px;">
+                    <div style="margin-bottom: 10px;">
+                        <strong>Critical:</strong> 
+                        <span class="{% if data.trends.critical < 0 %}text-success{% else %}text-danger{% endif %}">
+                            {{ '%+.1f'|format(data.trends.critical) }}%
+                        </span>
                     </div>
-                </td>
-                <td>
-                    {% if finding.severity == 'Critical' %}
-                        <span class="badge badge-critical">CRITICAL</span>
-                    {% elif finding.severity == 'High' %}
-                        <span class="badge badge-high">HIGH</span>
-                    {% elif finding.severity == 'Medium' %}
-                        <span class="badge badge-medium">MEDIUM</span>
-                    {% elif finding.severity == 'Low' %}
-                        <span class="badge badge-low">LOW</span>
-                    {% else %}
-                        <span class="badge badge-secondary">{{ finding.severity or 'UNKNOWN' }}</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if finding.risk_score %}
-                        <span class="badge badge-info">{{ "%.1f"|format(finding.risk_score|float) }}</span>
-                    {% else %}
-                        <span class="text-muted">N/A</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if finding.status == 'Open' %}
-                        <span class="badge badge-danger">OPEN</span>
-                    {% elif finding.status in ['Closed', 'Resolved', 'Fixed'] %}
-                        <span class="badge badge-success">{{ finding.status|upper }}</span>
-                    {% else %}
-                        <span class="badge badge-warning">{{ finding.status or 'UNKNOWN' }}</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {{ finding.created_at.strftime('%Y-%m-%d') if finding.created_at else 'N/A' }}
-                    {% if finding.updated_at and finding.updated_at != finding.created_at %}
-                    <br><small class="text-muted">Updated: {{ finding.updated_at.strftime('%Y-%m-%d') }}</small>
-                    {% endif %}
-                </td>
-                <td>
-                    <button class="btn btn-sm btn-info" 
-                            data-toggle="modal" 
-                            data-target="#findingModal{{ finding.id }}"
-                            title="View Details">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <a href="{{ url_for('export.export_cloud_finding_txt', finding_id=finding.id) }}" 
-                       class="btn btn-sm btn-secondary ml-1"
-                       title="Export to TXT">
-                        <i class="fas fa-file-download"></i>
-                    </a>
-                </td>
-            </tr>
+                    <div>
+                        <strong>High:</strong> 
+                        <span class="{% if data.trends.high < 0 %}text-success{% else %}text-danger{% endif %}">
+                            {{ '%+.1f'|format(data.trends.high) }}%
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
-            <!-- Finding Detail Modal - FIXED COLORS -->
-            <div class="modal fade" id="findingModal{{ finding.id }}" tabindex="-1" role="dialog">
-                <div class="modal-dialog modal-lg" role="document">
-                    <div class="modal-content" style="background-color: #ffffff; color: #212529;">
-                        <div class="modal-header" style="background-color: #f8f9fa; border-bottom: 1px solid #dee2e6;">
-                            <h5 class="modal-title" style="color: #212529;">
-                                <i class="fas fa-shield-alt"></i> 
-                                {{ finding.title or 'Cloud Security Finding' }}
-                            </h5>
-                            <button type="button" class="close" data-dismiss="modal" style="color: #000;">
-                                <span>&times;</span>
-                            </button>
+<!-- Severity Distribution -->
+<!-- SLA COMPLIANCE SECTION FOR executive_dashboard.html -->
+<!-- Add this AFTER the "Risk Score, Compliance Score, and Trend" section -->
+<!-- Place it around line 380, after the Risk/Compliance/Trend row -->
+
+<!-- SLA Compliance Overview -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-clock"></i> SLA Compliance Status</h3>
+            <p style="color: #7f8c8d; margin-bottom: 20px;">
+                Service Level Agreement: <strong>30 days</strong> for Critical/High severity, <strong>180 days</strong> for Medium/Low severity
+            </p>
+            
+            {% if data.sla_compliance %}
+            <!-- SLA Metrics Cards -->
+            <div class="row mb-4">
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="metric-card {% if data.sla_compliance.compliance_percentage >= 90 %}{% elif data.sla_compliance.compliance_percentage >= 70 %}text-warning{% else %}text-danger{% endif %}">
+                        <h3>SLA Compliance</h3>
+                        <div class="metric-value" style="color: {% if data.sla_compliance.compliance_percentage >= 90 %}#229954{% elif data.sla_compliance.compliance_percentage >= 70 %}#d68910{% else %}#c0392b{% endif %};">
+                            {{ '%.1f'|format(data.sla_compliance.compliance_percentage) }}%
                         </div>
-                        <div class="modal-body" style="background-color: #ffffff; color: #212529;">
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <strong style="color: #495057;">Resource:</strong> 
-                                    <span style="color: #212529;">{{ finding.resource_name or 'Unknown' }}</span>
-                                </div>
-                                <div class="col-md-6">
-                                    <strong style="color: #495057;">Provider:</strong> 
-                                    {% if finding.cloud_provider == 'AWS' %}
-                                        <i class="fab fa-aws" style="color: #FF9900;"></i> <span style="color: #212529;">AWS</span>
-                                    {% elif finding.cloud_provider == 'Azure' %}
-                                        <i class="fab fa-microsoft" style="color: #0078D4;"></i> <span style="color: #212529;">Azure</span>
-                                    {% elif finding.cloud_provider == 'GCP' %}
-                                        <i class="fab fa-google" style="color: #4285F4;"></i> <span style="color: #212529;">GCP</span>
-                                    {% else %}
-                                        <span style="color: #212529;">{{ finding.cloud_provider or 'Unknown' }}</span>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <strong style="color: #495057;">Severity:</strong> 
-                                    {% if finding.severity == 'Critical' %}
-                                        <span class="badge badge-danger">CRITICAL</span>
-                                    {% elif finding.severity == 'High' %}
-                                        <span class="badge badge-warning" style="background-color: #ff6b6b;">HIGH</span>
-                                    {% elif finding.severity == 'Medium' %}
-                                        <span class="badge badge-warning">MEDIUM</span>
-                                    {% elif finding.severity == 'Low' %}
-                                        <span class="badge badge-info">LOW</span>
-                                    {% else %}
-                                        <span class="badge badge-secondary">{{ finding.severity or 'Unknown' }}</span>
-                                    {% endif %}
-                                </div>
-                                <div class="col-md-6">
-                                    <strong style="color: #495057;">Risk Score:</strong> 
-                                    <span style="color: #212529;">{{ finding.risk_score or 'N/A' }}</span>
-                                </div>
-                            </div>
-
-                            {% if finding.resource_id %}
-                            <div class="mb-3">
-                                <strong style="color: #495057;">Resource ID:</strong>
-                                <code style="background-color: #f8f9fa; color: #e83e8c; padding: 2px 6px; border-radius: 3px;">{{ finding.resource_id }}</code>
-                            </div>
+                        <div class="metric-trend">
+                            {% if data.sla_compliance.compliance_percentage >= 90 %}
+                                Excellent Compliance
+                            {% elif data.sla_compliance.compliance_percentage >= 70 %}
+                                Needs Improvement
+                            {% else %}
+                                Critical Attention Required
                             {% endif %}
-
-                            {% if finding.resource_type %}
-                            <div class="mb-3">
-                                <strong style="color: #495057;">Resource Type:</strong> 
-                                <span style="color: #212529;">{{ finding.resource_type }}</span>
-                            </div>
-                            {% endif %}
-
-                            {% if finding.resource_region %}
-                            <div class="mb-3">
-                                <strong style="color: #495057;">Region:</strong> 
-                                <span style="color: #212529;">{{ finding.resource_region }}</span>
-                            </div>
-                            {% endif %}
-
-                            {% if finding.account_id %}
-                            <div class="mb-3">
-                                <strong style="color: #495057;">Account ID:</strong> 
-                                <span style="color: #212529;">{{ finding.account_id }}</span>
-                            </div>
-                            {% endif %}
-
-                            <div class="mb-3">
-                                <strong style="color: #495057;">Policy Violated:</strong><br>
-                                <span style="color: #212529;">{{ finding.policy_violated or 'Not specified' }}</span>
-                            </div>
-
-                            <div class="mb-3">
-                                <strong style="color: #495057;">Description:</strong><br>
-                                <p style="color: #212529; margin-top: 8px;">{{ finding.description or 'No description available' }}</p>
-                            </div>
-
-                            {% if finding.remediation %}
-                            <div class="mb-3">
-                                <strong style="color: #495057;">Remediation:</strong><br>
-                                <div class="alert alert-info" style="background-color: #d1ecf1; border-color: #bee5eb; color: #0c5460; margin-top: 8px;">
-                                    {{ finding.remediation }}
-                                </div>
-                            </div>
-                            {% endif %}
-
-                            {% if finding.compliance_frameworks %}
-                            <div class="mb-3">
-                                <strong style="color: #495057;">Compliance Frameworks:</strong><br>
-                                {% for framework in finding.compliance_frameworks %}
-                                    <span class="badge badge-secondary" style="margin-top: 4px;">{{ framework }}</span>
-                                {% endfor %}
-                            </div>
-                            {% endif %}
-
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <strong style="color: #495057;">Created:</strong> 
-                                    <span style="color: #212529;">{{ finding.created_at.strftime('%Y-%m-%d %H:%M UTC') if finding.created_at else 'N/A' }}</span>
-                                </div>
-                                <div class="col-md-6">
-                                    <strong style="color: #495057;">Last Updated:</strong> 
-                                    <span style="color: #212529;">{{ finding.updated_at.strftime('%Y-%m-%d %H:%M UTC') if finding.updated_at else 'N/A' }}</span>
-                                </div>
-                            </div>
                         </div>
-                        <div class="modal-footer" style="background-color: #f8f9fa; border-top: 1px solid #dee2e6;">
-                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
-                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="metric-card">
+                        <h3>Within SLA</h3>
+                        <div class="metric-value text-success">{{ data.sla_compliance.within_sla }}</div>
+                        <div class="metric-trend">Findings Compliant</div>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="metric-card critical">
+                        <h3>Exceeding SLA</h3>
+                        <div class="metric-value">{{ data.sla_compliance.exceeding_sla }}</div>
+                        <div class="metric-trend">Findings Overdue</div>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="metric-card high">
+                        <h3>Critical/High Overdue</h3>
+                        <div class="metric-value">{{ data.sla_compliance.critical_exceeding + data.sla_compliance.high_exceeding }}</div>
+                        <div class="metric-trend">Urgent Action Required</div>
                     </div>
                 </div>
             </div>
 
-            {% else %}
-            <tr>
-                <td colspan="7" class="text-center">
-                    <div class="py-5">
-                        <i class="fas fa-search fa-3x text-muted mb-3"></i>
-                        <h5>No cloud security findings found</h5>
-                        <p class="text-muted">Try adjusting your filters or check the data ingestion status.</p>
-                        <a href="{{ url_for('main.cloud_findings') }}" class="btn btn-primary mt-3">
-                            <i class="fas fa-redo"></i> Reset Filters
-                        </a>
+            <!-- SLA Breakdown by Severity -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h4 style="color: #2c3e50; font-weight: 700; margin-bottom: 15px;">SLA Violations by Severity</h4>
+                    <div class="table-responsive">
+                        <table class="table table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Severity</th>
+                                    <th>SLA Period</th>
+                                    <th>Exceeding SLA</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="badge badge-critical">CRITICAL</span></td>
+                                    <td><strong>30 days</strong></td>
+                                    <td>
+                                        <strong style="font-size: 1.2rem; {% if data.sla_compliance.critical_exceeding > 0 %}color: #c0392b;{% else %}color: #229954;{% endif %}">
+                                            {{ data.sla_compliance.critical_exceeding }}
+                                        </strong>
+                                    </td>
+                                    <td>
+                                        {% if data.sla_compliance.critical_exceeding == 0 %}
+                                        <span class="text-success"><i class="fas fa-check-circle"></i> Compliant</span>
+                                        {% else %}
+                                        <span class="text-danger"><i class="fas fa-exclamation-triangle"></i> {{ data.sla_compliance.critical_exceeding }} Violation(s)</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge badge-high">HIGH</span></td>
+                                    <td><strong>30 days</strong></td>
+                                    <td>
+                                        <strong style="font-size: 1.2rem; {% if data.sla_compliance.high_exceeding > 0 %}color: #d35400;{% else %}color: #229954;{% endif %}">
+                                            {{ data.sla_compliance.high_exceeding }}
+                                        </strong>
+                                    </td>
+                                    <td>
+                                        {% if data.sla_compliance.high_exceeding == 0 %}
+                                        <span class="text-success"><i class="fas fa-check-circle"></i> Compliant</span>
+                                        {% else %}
+                                        <span class="text-warning"><i class="fas fa-exclamation-triangle"></i> {{ data.sla_compliance.high_exceeding }} Violation(s)</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge badge-medium">MEDIUM</span></td>
+                                    <td><strong>180 days</strong></td>
+                                    <td>
+                                        <strong style="font-size: 1.2rem; {% if data.sla_compliance.medium_exceeding > 0 %}color: #d68910;{% else %}color: #229954;{% endif %}">
+                                            {{ data.sla_compliance.medium_exceeding }}
+                                        </strong>
+                                    </td>
+                                    <td>
+                                        {% if data.sla_compliance.medium_exceeding == 0 %}
+                                        <span class="text-success"><i class="fas fa-check-circle"></i> Compliant</span>
+                                        {% else %}
+                                        <span style="color: #d68910;"><i class="fas fa-exclamation-circle"></i> {{ data.sla_compliance.medium_exceeding }} Violation(s)</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge badge-low">LOW</span></td>
+                                    <td><strong>180 days</strong></td>
+                                    <td>
+                                        <strong style="font-size: 1.2rem; {% if data.sla_compliance.low_exceeding > 0 %}color: #2874a6;{% else %}color: #229954;{% endif %}">
+                                            {{ data.sla_compliance.low_exceeding }}
+                                        </strong>
+                                    </td>
+                                    <td>
+                                        {% if data.sla_compliance.low_exceeding == 0 %}
+                                        <span class="text-success"><i class="fas fa-check-circle"></i> Compliant</span>
+                                        {% else %}
+                                        <span style="color: #2874a6;"><i class="fas fa-info-circle"></i> {{ data.sla_compliance.low_exceeding }} Violation(s)</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+                </div>
+            </div>
 
-<!-- Integration Status -->
-<div class="alert alert-secondary mt-4">
-    <h6><i class="fas fa-info-circle"></i> Tenable Cloud Security Integration Status</h6>
-    <div class="row">
-        <div class="col-md-3">
-            <strong>Total Findings:</strong> {{ cloud_stats.total or 0 }}
+            <!-- Top SLA Violations Table -->
+            {% if data.sla_compliance.exceeding_findings %}
+            <div class="row">
+                <div class="col-12">
+                    <h4 style="color: #2c3e50; font-weight: 700; margin-bottom: 15px;">
+                        <i class="fas fa-exclamation-triangle"></i> Top SLA Violations (Most Overdue)
+                    </h4>
+                    <p style="color: #7f8c8d; margin-bottom: 15px;">
+                        Showing the {{ [data.sla_compliance.exceeding_findings|length, 20]|min }} most overdue findings
+                    </p>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th width="5%">Rank</th>
+                                    <th width="35%">Vulnerability</th>
+                                    <th width="20%">Asset</th>
+                                    <th width="10%">Severity</th>
+                                    <th width="10%">Age (Days)</th>
+                                    <th width="10%">SLA (Days)</th>
+                                    <th width="10%">Days Overdue</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for finding in data.sla_compliance.exceeding_findings[:20] %}
+                                <tr>
+                                    <td><strong>{{ loop.index }}</strong></td>
+                                    <td style="color: #2c3e50; font-weight: 500;">
+                                        {{ finding.plugin_name[:50] + '...' if finding.plugin_name and finding.plugin_name|length > 50 else finding.plugin_name }}
+                                    </td>
+                                    <td style="font-size: 0.9rem;">{{ finding.asset_hostname[:30] + '...' if finding.asset_hostname and finding.asset_hostname|length > 30 else finding.asset_hostname }}</td>
+                                    <td>
+                                        <span class="badge badge-{{ finding.severity|lower }}">{{ finding.severity|upper }}</span>
+                                    </td>
+                                    <td><strong>{{ finding.age_days }}</strong></td>
+                                    <td>{{ finding.sla_days }}</td>
+                                    <td>
+                                        <strong style="color: {% if finding.days_overdue > 90 %}#c0392b{% elif finding.days_overdue > 30 %}#d68910{% else %}#d35400{% endif %}; font-size: 1.1rem;">
+                                            +{{ finding.days_overdue }}
+                                        </strong>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    {% if data.sla_compliance.exceeding_findings|length > 20 %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> 
+                        Showing top 20 violations. <strong>{{ data.sla_compliance.exceeding_findings|length - 20 }}</strong> additional findings are exceeding SLA.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle"></i> 
+                <strong>Excellent!</strong> All findings are currently within SLA compliance periods.
+            </div>
+            {% endif %}
+            
+            {% else %}
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-circle"></i> SLA compliance data is not available. Ensure findings have first_found dates populated.
+            </div>
+            {% endif %}
         </div>
-        <div class="col-md-3">
-            <strong>Data Source:</strong> Tenable Cloud Security (Ermetic)
-        </div>
-        <div class="col-md-3">
-            <strong>Open Findings:</strong> {{ cloud_stats.total - (cloud_stats.closed or 0) }}
-        </div>
-        <div class="col-md-3">
-            <strong>Last Sync:</strong> Real-time from database
+    </div>
+</div>
+<!-- Severity Distribution -->
+<div class="row mb-4">
+    <div class="col-lg-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-chart-bar"></i> Severity Distribution</h3>
+            <canvas id="severityChart" style="max-height: 300px;"></canvas>
         </div>
     </div>
 </div>
 
-{% endblock %}
+<!-- 12-Week Trend -->
+<div class="row mb-4">
+    <div class="col-lg-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-chart-line"></i> 12-Week Trend Analysis</h3>
+            <canvas id="trendChart" style="max-height: 300px;"></canvas>
+        </div>
+    </div>
+</div>
 
-{% block extra_js %}
+<!-- NIST 800-53 Spotlight -->
+{% if data.grc_summary and 'NIST 800-53' in data.grc_summary %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="nist-spotlight">
+            <h3><i class="fas fa-shield-alt"></i> NIST 800-53 Compliance Spotlight</h3>
+            <div class="row mt-4">
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="nist-metric">
+                        <h2 style="color: white;">{{ data.grc_summary['NIST 800-53'].total_findings }}</h2>
+                        <p>Total Findings</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="nist-metric">
+                        <h2 style="color: #e74c3c;">{{ data.grc_summary['NIST 800-53'].critical }}</h2>
+                        <p>Critical Severity</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="nist-metric">
+                        <h2 style="color: #f39c12;">{{ data.grc_summary['NIST 800-53'].high }}</h2>
+                        <p>High Priority</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="nist-metric">
+                        <h2 style="color: #3498db;">{{ data.grc_summary['NIST 800-53'].requirements_count }}</h2>
+                        <p>Controls Affected</p>
+                    </div>
+                </div>
+            </div>
+            <div class="alert" style="background: rgba(255,255,255,0.2); border: 2px solid #f39c12; color: white; margin-top: 20px; margin-bottom: 0;">
+                <i class="fas fa-info-circle"></i> 
+                <strong>NIST 800-53 Impact:</strong> {{ data.grc_summary['NIST 800-53'].requirements_count }} security controls are currently affected by active vulnerabilities. 
+                Immediate remediation focus on {{ data.grc_summary['NIST 800-53'].critical }} critical and {{ data.grc_summary['NIST 800-53'].high }} high-severity findings is recommended.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- NIST Controls Table -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-list-alt"></i> NIST 800-53 Top Affected Controls</h3>
+            <p style="color: #7f8c8d; margin-bottom: 20px;">
+                Vulnerabilities mapped to specific NIST 800-53 Rev 5 security controls - prioritize remediation by control impact.
+            </p>
+            
+            <div style="margin-bottom: 20px;">
+                <a href="{{ url_for('export.export_nist_focused_csv') }}" class="btn btn-primary">
+                    <i class="fas fa-file-csv"></i> Export NIST CSV Report
+                </a>
+                <a href="{{ url_for('export.export_grouped_findings_csv') }}" class="btn btn-secondary ml-2">
+                    <i class="fas fa-table"></i> Export All Findings with NIST
+                </a>
+            </div>
+            
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th width="15%">Control ID</th>
+                        <th width="45%">Control Description</th>
+                        <th width="10%">Total</th>
+                        <th width="10%">Critical</th>
+                        <th width="10%">High</th>
+                        <th width="10%">Assets</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if data.nist_controls %}
+                        {% for control in data.nist_controls[:15] %}
+                        <tr>
+                            <td><strong style="color: #0d47a1; font-size: 1.05rem;">{{ control.control_id }}</strong></td>
+                            <td style="color: #34495e; font-size: 0.9rem;">
+                                {{ control.description[:80] + '...' if control.description and control.description|length > 80 else control.description or 'No description available' }}
+                            </td>
+                            <td><strong>{{ control.total_findings }}</strong></td>
+                            <td>
+                                {% if control.critical > 0 %}
+                                <span class="badge badge-critical">{{ control.critical }}</span>
+                                {% else %}
+                                <span style="color: #95a5a6;">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if control.high > 0 %}
+                                <span class="badge badge-high">{{ control.high }}</span>
+                                {% else %}
+                                <span style="color: #95a5a6;">-</span>
+                                {% endif %}
+                            </td>
+                            <td><strong>{{ control.affected_assets }}</strong></td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted">
+                                <em>No NIST control data available. Ensure GRC mappings are loaded.</em>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+            
+            {% if data.nist_controls and data.nist_controls|length > 15 %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i> 
+                Showing top 15 controls. <strong>{{ data.nist_controls|length - 15 }}</strong> additional controls are affected. 
+                Export the full NIST CSV report for complete details.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- GRC Compliance Summary -->
+{% if data.grc_summary %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-gavel"></i> GRC Compliance Impact - All Frameworks</h3>
+            <div class="row mt-3">
+                {% for framework, stats in data.grc_summary.items() %}
+                <div class="col-lg-6 mb-3">
+                    <div class="grc-framework-card">
+                        <h4>{{ framework }}</h4>
+                        <div class="grc-stat">
+                            <strong>{{ stats.total_findings }}</strong> Total Findings
+                        </div>
+                        <div class="grc-stat">
+                            <strong>{{ stats.critical }}</strong> Critical
+                        </div>
+                        <div class="grc-stat">
+                            <strong>{{ stats.high }}</strong> High
+                        </div>
+                        <div class="grc-stat">
+                            <strong>{{ stats.requirements_count }}</strong> Requirements Affected
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Top 10 Vulnerabilities -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-list-ol"></i> Top 10 Vulnerabilities by Asset Impact</h3>
+            <table class="table table-hover mt-3">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Vulnerability</th>
+                        <th>Severity</th>
+                        <th>Affected Assets</th>
+                        <th>VPR Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vuln in data.top_vulnerabilities %}
+                    <tr>
+                        <td><strong>{{ loop.index }}</strong></td>
+                        <td style="color: #2c3e50; font-weight: 500;">{{ vuln.plugin_name }}</td>
+                        <td><span class="badge badge-{{ vuln.severity }}">{{ vuln.severity|upper }}</span></td>
+                        <td><strong>{{ vuln.asset_count }}</strong></td>
+                        <td style="font-weight: 600;">{{ '%.1f'|format(vuln.vpr_score) if vuln.vpr_score else 'N/A' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Top Cloud Security Issues -->
+{% if data.cloud_summary and data.cloud_summary.total_findings > 0 %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-cloud-upload-alt"></i> Top Cloud Security Issues</h3>
+            <p style="color: #7f8c8d; margin-bottom: 20px;">
+                Critical cloud misconfigurations and policy violations requiring immediate attention
+            </p>
+            
+            <div style="margin-bottom: 15px;">
+                <a href="{{ url_for('export.export_cloud_findings_csv') }}" class="btn btn-primary">
+                    <i class="fas fa-file-csv"></i> Export Cloud Findings CSV
+                </a>
+                <a href="{{ url_for('export.export_cloud_findings_txt') }}" class="btn btn-secondary ml-2">
+                    <i class="fas fa-file-alt"></i> Export Cloud Findings TXT
+                </a>
+            </div>
+            
+            {% if data.top_cloud_findings %}
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th width="10%">Provider</th>
+                        <th width="40%">Finding</th>
+                        <th width="30%">Resource</th>
+                        <th width="10%">Severity</th>
+                        <th width="10%">Risk Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for finding in data.top_cloud_findings[:10] %}
+                    <tr>
+                        <td>
+                            {% if finding.cloud_provider == 'AWS' %}
+                            <span class="cloud-provider-badge aws">AWS</span>
+                            {% elif finding.cloud_provider == 'Azure' %}
+                            <span class="cloud-provider-badge azure">Azure</span>
+                            {% elif finding.cloud_provider == 'GCP' %}
+                            <span class="cloud-provider-badge gcp">GCP</span>
+                            {% else %}
+                            <span style="color: #95a5a6;">{{ finding.cloud_provider }}</span>
+                            {% endif %}
+                        </td>
+                        <td style="color: #2c3e50; font-weight: 500;">
+                            {{ finding.title[:60] + '...' if finding.title and finding.title|length > 60 else finding.title or 'Cloud Security Finding' }}
+                        </td>
+                        <td style="color: #34495e; font-size: 0.9rem;">
+                            <strong>{{ finding.resource_name[:40] + '...' if finding.resource_name and finding.resource_name|length > 40 else finding.resource_name or 'N/A' }}</strong>
+                            {% if finding.region %}
+                            <br><small class="text-muted">{{ finding.region }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if finding.severity == 'Critical' or finding.severity == 'critical' %}
+                            <span class="badge badge-critical">CRITICAL</span>
+                            {% elif finding.severity == 'High' or finding.severity == 'high' %}
+                            <span class="badge badge-high">HIGH</span>
+                            {% elif finding.severity == 'Medium' or finding.severity == 'medium' %}
+                            <span class="badge badge-medium">MEDIUM</span>
+                            {% else %}
+                            <span class="badge badge-low">LOW</span>
+                            {% endif %}
+                        </td>
+                        <td><strong>{{ finding.risk_score }}</strong></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i> No cloud security findings available at this time.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Executive Summary -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="chart-container">
+            <h3><i class="fas fa-file-alt"></i> Executive Summary</h3>
+            <p class="lead mt-3" style="color: #2c3e50; font-weight: 500;">
+                <strong style="font-weight: 700;">Security Posture:</strong> The organization currently has 
+                <strong style="font-weight: 700;">{{ data.summary.total_findings }}</strong> active security findings across 
+                <strong style="font-weight: 700;">{{ data.summary.total_assets }}</strong> managed assets.
+            </p>
+            <p style="color: #34495e; font-weight: 500;">
+                <strong style="font-weight: 700; color: #2c3e50;">Critical Issues:</strong> There are 
+                <strong class="text-danger">{{ data.summary.critical_findings }}</strong> critical vulnerabilities 
+                requiring immediate attention and 
+                <strong class="text-warning">{{ data.summary.high_findings }}</strong> high-priority issues.
+            </p>
+            <p style="color: #34495e; font-weight: 500;">
+                <strong style="font-weight: 700; color: #2c3e50;">Trend Analysis:</strong> Findings have 
+                {% if data.trends.total < 0 %}
+                    <span class="text-success">decreased by {{ '%.1f'|format(data.trends.total|abs) }}%</span>
+                {% else %}
+                    <span class="text-danger">increased by {{ '%.1f'|format(data.trends.total) }}%</span>
+                {% endif %}
+                compared to the previous 30-day period.
+            </p>
+            {% if data.summary.attack_path_findings > 0 %}
+            <p style="color: #34495e; font-weight: 500;">
+                <strong style="font-weight: 700; color: #2c3e50;">Attack Surface:</strong> 
+                <strong class="text-danger">{{ data.summary.attack_path_findings }}</strong> vulnerabilities 
+                are part of identified attack paths, representing elevated risk exposure.
+            </p>
+            {% endif %}
+            {% if data.cloud_summary and data.cloud_summary.total_findings > 0 %}
+            <p style="color: #34495e; font-weight: 500;">
+                <strong style="font-weight: 700; color: #2c3e50;">Cloud Security:</strong> 
+                <strong style="font-weight: 700; color: #3498db;">{{ data.cloud_summary.total_findings }}</strong> cloud security findings detected across 
+                <strong style="font-weight: 700;">{{ data.cloud_summary.total_resources }}</strong> cloud resources 
+                (AWS: {{ data.cloud_summary.aws_findings }}, Azure: {{ data.cloud_summary.azure_findings }}, GCP: {{ data.cloud_summary.gcp_findings }}), 
+                with <strong class="text-danger">{{ data.cloud_summary.critical }}</strong> critical misconfigurations.
+            </p>
+            {% endif %}
+            {% if data.grc_stats.frameworks_affected > 0 %}
+            <p style="color: #34495e; font-weight: 500;">
+                <strong style="font-weight: 700; color: #2c3e50;">Compliance Impact:</strong> 
+                <strong style="font-weight: 700;">{{ data.grc_stats.frameworks_affected }}</strong> regulatory frameworks 
+                are currently impacted by active vulnerabilities, affecting 
+                <strong style="font-weight: 700;">{{ data.grc_stats.total_requirements }}</strong> specific requirements.
+            </p>
+            {% endif %}
+            {% if data.grc_summary and 'NIST 800-53' in data.grc_summary %}
+            <p style="color: #34495e; font-weight: 500;">
+                <strong style="font-weight: 700; color: #2c3e50;">NIST 800-53 Status:</strong> 
+                <strong style="font-weight: 700;">{{ data.grc_summary['NIST 800-53'].requirements_count }}</strong> NIST controls are affected, with
+                <strong class="text-danger">{{ data.grc_summary['NIST 800-53'].critical }}</strong> critical and
+                <strong class="text-warning">{{ data.grc_summary['NIST 800-53'].high }}</strong> high-severity findings requiring immediate remediation.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize Bootstrap tooltips
-    if (typeof $ !== 'undefined' && $.fn.tooltip) {
-        $('[data-toggle="tooltip"]').tooltip();
+// Risk Gauge
+const riskCtx = document.getElementById('riskGauge').getContext('2d');
+new Chart(riskCtx, {
+    type: 'doughnut',
+    data: {
+        datasets: [{
+            data: [{{ data.risk_score }}, {{ 100 - data.risk_score }}],
+            backgroundColor: [
+                {% if data.risk_score > 70 %}'#c0392b'{% elif data.risk_score > 40 %}'#d68910'{% else %}'#229954'{% endif %},
+                '#ecf0f1'
+            ],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        circumference: 180,
+        rotation: 270,
+        cutout: '75%',
+        plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false }
+        }
     }
-    
-    // Add click-to-copy for resource IDs
-    document.querySelectorAll('code').forEach(code => {
-        code.style.cursor = 'pointer';
-        code.title = 'Click to copy';
-        code.addEventListener('click', function() {
-            if (navigator.clipboard) {
-                navigator.clipboard.writeText(this.textContent);
-                const original = this.style.backgroundColor;
-                this.style.backgroundColor = '#28a745';
-                this.style.color = 'white';
-                setTimeout(() => {
-                    this.style.backgroundColor = original;
-                    this.style.color = '';
-                }, 1000);
-            }
-        });
-    });
+});
 
-    // Auto-refresh indicator (optional)
-    console.log('Cloud Security Findings loaded: {{ cloud_findings|length }} findings');
+// Compliance Gauge
+const complianceCtx = document.getElementById('complianceGauge').getContext('2d');
+new Chart(complianceCtx, {
+    type: 'doughnut',
+    data: {
+        datasets: [{
+            data: [{{ data.compliance_score }}, {{ 100 - data.compliance_score }}],
+            backgroundColor: [
+                {% if data.compliance_score > 70 %}'#229954'{% elif data.compliance_score > 40 %}'#d68910'{% else %}'#c0392b'{% endif %},
+                '#ecf0f1'
+            ],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        circumference: 180,
+        rotation: 270,
+        cutout: '75%',
+        plugins: {
+            legend: { display: false },
+            tooltip: { enabled: false }
+        }
+    }
+});
+
+// Severity Distribution
+const severityCtx = document.getElementById('severityChart').getContext('2d');
+new Chart(severityCtx, {
+    type: 'bar',
+    data: {
+        labels: ['Critical', 'High', 'Medium', 'Low'],
+        datasets: [{
+            label: 'Current Findings',
+            data: [
+                {{ data.severity_current.critical }},
+                {{ data.severity_current.high }},
+                {{ data.severity_current.medium }},
+                {{ data.severity_current.low }}
+            ],
+            backgroundColor: ['#c0392b', '#d35400', '#d68910', '#2874a6']
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { display: false }
+        },
+        scales: {
+            y: { beginAtZero: true }
+        }
+    }
+});
+
+// 12-Week Trend Chart
+const trendCtx = document.getElementById('trendChart').getContext('2d');
+new Chart(trendCtx, {
+    type: 'line',
+    data: {
+        labels: {{ data.weekly_trends | map(attribute='week') | list | tojson }},
+        datasets: [{
+            label: 'Total Findings',
+            data: {{ data.weekly_trends | map(attribute='total') | list | tojson }},
+            borderColor: '#2874a6',
+            backgroundColor: 'rgba(40, 116, 166, 0.1)',
+            tension: 0.4,
+            fill: true
+        }, {
+            label: 'Critical',
+            data: {{ data.weekly_trends | map(attribute='critical') | list | tojson }},
+            borderColor: '#c0392b',
+            tension: 0.4
+        }, {
+            label: 'High',
+            data: {{ data.weekly_trends | map(attribute='high') | list | tojson }},
+            borderColor: '#d35400',
+            tension: 0.4
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { position: 'bottom' }
+        },
+        scales: {
+            y: { beginAtZero: true }
+        }
+    }
 });
 </script>
+
 {% endblock %}
