@@ -690,7 +690,7 @@ def executive_dashboard_pdf():
         
         normal_style = styles['Normal']
         
-        # ========== PAGE 1: HEADER & KEY METRICS ==========
+        # ========== PAGE 1: HEADER & KEY METRICS (ENHANCED TO MATCH HTML) ==========
         
         # Logo
         if COMPANY_LOGO_PATH and os.path.exists(COMPANY_LOGO_PATH):
@@ -715,9 +715,81 @@ def executive_dashboard_pdf():
         elements.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#2c3e50')))
         elements.append(Spacer(1, 0.3*inch))
         
+        # ========== 6-METRIC KEY METRICS GRID (MATCHING HTML CARDS) ==========
+        
+        elements.append(Paragraph("Key Security Metrics", heading_style))
+        elements.append(Spacer(1, 0.1*inch))
+        
+        # Calculate trend text
+        trend_direction = "↓" if trends['total'] < 0 else "↑"
+        trend_color = colors.HexColor('#229954') if trends['total'] < 0 else colors.HexColor('#c0392b')
+        
+        # Create 6-metric grid (matching HTML: Critical, High, Total, Assets, Cloud Findings, Cloud Resources)
+        key_metrics_data = [
+            ['Metric', 'Value', 'Trend/Status'],
+            [
+                'Critical Findings',
+                str(severity_current['critical']),
+                'Immediate Action Required'
+            ],
+            [
+                'High Priority Findings',
+                str(severity_current['high']),
+                'Urgent Remediation'
+            ],
+            [
+                'Total Active Findings',
+                str(total_current),
+                f"{trend_direction} {abs(trends['total']):.1f}% vs Last Period"
+            ],
+            [
+                'Assets Under Management',
+                str(total_assets),
+                f"{critical_assets} with Critical Issues"
+            ],
+            [
+                'Cloud Findings',
+                str(cloud_summary.get('total_findings', 0)),
+                'Cloud Security Issues'
+            ],
+            [
+                'Cloud Resources',
+                str(cloud_summary.get('total_resources', 0)),
+                'Multi-Cloud Assets'
+            ]
+        ]
+        
+        key_metrics_table = Table(key_metrics_data, colWidths=[2.3*inch, 1.5*inch, 2.7*inch])
+        key_metrics_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+            ('ALIGN', (2, 0), (2, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),  # Make values bold
+            ('FONTSIZE', (1, 1), (1, -1), 14),  # Make values larger
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#ecf0f1')]),
+            # Highlight critical row in red
+            ('TEXTCOLOR', (1, 1), (1, 1), colors.HexColor('#c0392b')),
+            # Highlight high row in orange
+            ('TEXTCOLOR', (1, 2), (1, 2), colors.HexColor('#d35400')),
+            # Highlight cloud rows in blue
+            ('TEXTCOLOR', (1, 5), (1, 6), colors.HexColor('#3498db')),
+        ]))
+        
+        elements.append(key_metrics_table)
+        elements.append(Spacer(1, 0.3*inch))
+        
         # ========== GAUGE CHARTS: RISK & COMPLIANCE ==========
         
-        elements.append(Paragraph("Security Posture Overview", heading_style))
+        elements.append(Paragraph("Risk & Compliance Assessment", heading_style))
         elements.append(Spacer(1, 0.2*inch))
         
         # Create table with two gauges side by side
@@ -731,44 +803,78 @@ def executive_dashboard_pdf():
         ]))
         
         elements.append(gauge_table)
-        elements.append(Spacer(1, 0.3*inch))
+        elements.append(Spacer(1, 0.2*inch))
         
-        # Key Metrics Table
-        trend_text = f"{trends['total']:+.0f}% vs Previous Period"
+        # Risk & Compliance status text
         risk_status = 'High Risk' if risk_score > 70 else 'Moderate Risk' if risk_score > 40 else 'Low Risk'
         compliance_status = 'Excellent' if compliance_score > 80 else 'Good' if compliance_score > 60 else 'Needs Improvement'
         
-        metrics_data = [
-            ['Metric', 'Value', 'Status'],
-            ['Critical Findings', str(severity_current['critical']), 'Immediate Action Required'],
-            ['High Findings', str(severity_current['high']), 'High Priority'],
-            ['Total Findings', str(total_current), trend_text],
-            ['Total Assets', str(total_assets), 'Under Management'],
-            ['Critical Assets', str(critical_assets), 'Require Attention']
+        status_data = [
+            ['Assessment', 'Score', 'Status'],
+            ['Risk Level', f"{risk_score:.0f}/100", risk_status],
+            ['Compliance Level', f"{compliance_score:.0f}/100", compliance_status]
         ]
         
-        if attack_path_findings > 0:
-            metrics_data.append(['Attack Paths', str(attack_path_findings), 'Chained Vulnerabilities'])
-        
-        if mttr_days > 0:
-            metrics_data.append(['MTTR (Overall)', f"{mttr_days} days", f"Based on {len(fixed_findings)} fixed items"])
-        
-        metrics_table = Table(metrics_data, colWidths=[2.2*inch, 1.8*inch, 2.5*inch])
-        metrics_table.setStyle(TableStyle([
+        status_table = Table(status_data, colWidths=[2*inch, 1.5*inch, 3*inch])
+        status_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('FONTNAME', (1, 1), (1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (1, 1), (1, -1), 12),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
-            ('FONTNAME', (0, 1), (1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7')),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')])
         ]))
         
-        elements.append(metrics_table)
+        elements.append(status_table)
+        elements.append(Spacer(1, 0.3*inch))
+        
+        # ========== 30-DAY TREND SUMMARY (MATCHING HTML) ==========
+        
+        elements.append(Paragraph("30-Day Trend Analysis", heading_style))
+        elements.append(Spacer(1, 0.1*inch))
+        
+        trend_summary_data = [
+            ['Category', 'Current', 'Previous', 'Change'],
+            [
+                'Total Findings',
+                str(total_current),
+                str(total_previous),
+                f"{trends['total']:+.1f}%"
+            ],
+            [
+                'Critical Findings',
+                str(severity_current['critical']),
+                str(severity_previous['critical']),
+                f"{trends['critical']:+.1f}%"
+            ],
+            [
+                'High Findings',
+                str(severity_current['high']),
+                str(severity_previous['high']),
+                f"{trends['high']:+.1f}%"
+            ]
+        ]
+        
+        trend_summary_table = Table(trend_summary_data, colWidths=[2*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+        trend_summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#ecf0f1')])
+        ]))
+        
+        elements.append(trend_summary_table)
         elements.append(Spacer(1, 0.4*inch))
         
         # ========== PAGE BREAK ==========
@@ -1036,8 +1142,144 @@ def executive_dashboard_pdf():
             elements.append(grc_table)
             elements.append(Spacer(1, 0.4*inch))
         
-        # NIST Controls
-        if nist_controls:
+        # ========== PAGE BREAK FOR NIST SPOTLIGHT ==========
+        elements.append(PageBreak())
+        
+        # ========== NIST 800-53 COMPLIANCE SPOTLIGHT (MATCHING HTML) ==========
+        
+        if nist_controls and grc_summary and 'NIST 800-53' in grc_summary:
+            nist_data = grc_summary['NIST 800-53']
+            
+            # NIST Spotlight Header
+            elements.append(Paragraph("NIST 800-53 Compliance Spotlight", heading_style))
+            elements.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#f39c12')))
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # NIST Policy note
+            elements.append(Paragraph(
+                '<font size="10" color="#34495e"><b>NIST 800-53 Rev 5</b> - Federal security and privacy controls for information systems and organizations.</font>',
+                body_style
+            ))
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # 4-Box Metrics (matching HTML spotlight)
+            nist_spotlight_data = [
+                ['Total Findings', 'Critical Severity', 'High Priority', 'Controls Affected'],
+                [
+                    str(nist_data['total_findings']),
+                    str(nist_data['critical']),
+                    str(nist_data['high']),
+                    str(nist_data['requirements_count'])
+                ]
+            ]
+            
+            nist_spotlight_table = Table(nist_spotlight_data, colWidths=[1.6*inch, 1.6*inch, 1.6*inch, 1.6*inch])
+            nist_spotlight_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 1), (-1, 1), 18),  # Large numbers like HTML
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('TOPPADDING', (0, 1), (-1, 1), 15),
+                ('BOTTOMPADDING', (0, 1), (-1, 1), 15),
+                ('BACKGROUND', (0, 1), (-1, 1), colors.white),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7')),
+                # Color the values
+                ('TEXTCOLOR', (0, 1), (0, 1), colors.HexColor('#2c3e50')),  # Total
+                ('TEXTCOLOR', (1, 1), (1, 1), colors.HexColor('#e74c3c')),  # Critical - red
+                ('TEXTCOLOR', (2, 1), (2, 1), colors.HexColor('#f39c12')),  # High - orange
+                ('TEXTCOLOR', (3, 1), (3, 1), colors.HexColor('#3498db')),  # Controls - blue
+            ]))
+            
+            elements.append(nist_spotlight_table)
+            elements.append(Spacer(1, 0.3*inch))
+            
+            # NIST Impact Alert (matching HTML)
+            impact_box = Paragraph(
+                f'<font size="10" color="#2c3e50"><b>⚠ NIST 800-53 Impact:</b> '
+                f'{nist_data["requirements_count"]} security controls are currently affected by active vulnerabilities. '
+                f'Immediate remediation focus on {nist_data["critical"]} critical and {nist_data["high"]} high-severity findings is recommended.</font>',
+                body_style
+            )
+            
+            impact_table = Table([[impact_box]], colWidths=[6.5*inch])
+            impact_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fff3cd')),
+                ('BOX', (0, 0), (-1, -1), 2, colors.HexColor('#f39c12')),
+                ('LEFTPADDING', (0, 0), (-1, -1), 15),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 15),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ]))
+            
+            elements.append(impact_table)
+            elements.append(Spacer(1, 0.3*inch))
+            
+            # Top NIST Controls Table (Enhanced with descriptions)
+            elements.append(Paragraph("NIST 800-53 Top Affected Controls", heading_style))
+            elements.append(Spacer(1, 0.1*inch))
+            elements.append(Paragraph(
+                '<font size="9" color="#7f8c8d">Vulnerabilities mapped to specific NIST 800-53 Rev 5 security controls - prioritize remediation by control impact.</font>',
+                body_style
+            ))
+            elements.append(Spacer(1, 0.15*inch))
+            
+            nist_detail_data = [['Control ID', 'Description', 'Total', 'Critical', 'High', 'Assets']]
+            
+            for control in nist_controls[:15]:
+                control_id = control['control_id']
+                # Truncate description to fit
+                description = control.get('description', 'No description available')
+                if len(description) > 50:
+                    description = description[:47] + "..."
+                
+                nist_detail_data.append([
+                    control_id,
+                    description,
+                    str(control['total_findings']),
+                    str(control['critical']) if control['critical'] > 0 else '-',
+                    str(control['high']) if control['high'] > 0 else '-',
+                    str(control['affected_assets'])
+                ])
+            
+            nist_detail_table = Table(nist_detail_data, colWidths=[0.9*inch, 2.5*inch, 0.6*inch, 0.7*inch, 0.6*inch, 0.7*inch])
+            nist_detail_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTSIZE', (0, 1), (0, -1), 8),  # Control ID
+                ('FONTSIZE', (1, 1), (1, -1), 7),  # Description
+                ('FONTSIZE', (2, 1), (-1, -1), 8),  # Numbers
+                ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),  # Bold control IDs
+                ('TEXTCOLOR', (0, 1), (0, -1), colors.HexColor('#0d47a1')),  # Blue control IDs
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('TOPPADDING', (0, 1), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#bdc3c7')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#ecf0f1')]),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            
+            elements.append(nist_detail_table)
+            elements.append(Spacer(1, 0.2*inch))
+            
+            if len(nist_controls) > 15:
+                elements.append(Paragraph(
+                    f'<font size="9" color="#7f8c8d"><i>Showing top 15 controls. {len(nist_controls) - 15} additional controls are affected.</i></font>',
+                    body_style
+                ))
+                elements.append(Spacer(1, 0.3*inch))
+        
+        elif nist_controls:
+            # Fallback if no GRC summary but have NIST controls
             elements.append(Paragraph("NIST 800-53 Controls - Most Affected", heading_style))
             elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#3498db')))
             elements.append(Spacer(1, 0.2*inch))
