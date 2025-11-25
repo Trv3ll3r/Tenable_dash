@@ -1,6 +1,6 @@
 """
 Data Processing Module - Clean data transformation and database operations
-Updated to include CloudFindingProcessor for Ermetic data
+Updated to include CloudFindingProcessor for Ermetic data with intelligent cloud provider detection
 """
 
 import json
@@ -14,7 +14,7 @@ from app.models import (
     AttackPathFinding, 
     WASFinding, 
     ContainerSecurityFinding,
-    CloudFinding,  # Add this import
+    CloudFinding,
     ComplianceRequirement,
     PluginComplianceMapping
 )
@@ -360,48 +360,117 @@ class WASProcessor:
 
 
 class CloudFindingProcessor:
-    """Process cloud security findings from Ermetic"""
+    """Process cloud security findings from Ermetic/Tenable Cloud Security"""
     
     @staticmethod
     def process_finding(finding_data):
         """
         Process and save a cloud security finding from Ermetic
-        
-        Args:
-            finding_data: Raw cloud finding data from Ermetic API
-            
-        Returns:
-            bool: True if saved successfully, False otherwise
         """
         try:
-            # Extract finding ID - adjust field names based on actual Ermetic API response
-            finding_id = (
-                finding_data.get('id') or 
-                finding_data.get('finding_id') or 
-                finding_data.get('alertId') or
-                finding_data.get('riskId')
-            )
+            finding_id = finding_data.get('id', '')
             
             if not finding_id:
                 current_app.logger.warning("Cloud finding missing ID, skipping")
-                current_app.logger.debug(f"Finding data keys: {list(finding_data.keys())}")
                 return False
             
-            # Convert to string for consistency
-            finding_id = str(finding_id)
+            # DEBUG: Log the entire finding structure
+            current_app.logger.debug(f"Processing cloud finding {finding_id}")
+            current_app.logger.debug(f"  Finding keys: {list(finding_data.keys())}")
+            
+            # Extract resource information
+            resource = finding_data.get('resource', {})
+            current_app.logger.debug(f"  Resource keys: {list(resource.keys())}")
+            current_app.logger.debug(f"  Resource data: {resource}")
             
             # Check if finding already exists
             existing = CloudFinding.query.filter_by(finding_id=finding_id).first()
             
+            # Extract and normalize cloud provider with intelligent detection
+            cloud_provider = resource.get('cloud_provider', 'Unknown')
+            current_app.logger.debug(f"  Initial cloud_provider from resource: '{cloud_provider}'")
+            
+            # If Unknown, try to infer from resource_id or other fields
+            if cloud_provider == 'Unknown' or not cloud_provider:
+                resource_id = resource.get('id', '')
+                resource_name = resource.get('name', '')
+                account_id = resource.get('account_id', '')
+                
+                # Check for AWS patterns
+                if resource_id.startswith('arn:aws:') or 'amazonaws' in resource_name.lower():
+                    cloud_provider = 'AWS'
+                    current_app.logger.debug(f"  Detected AWS from resource_id/name")
+                
+                # Check for Azure patterns
+                elif '/subscriptions/' in resource_id or '/resourceGroups/' in resource_id:
+                    cloud_provider = 'AZURE'
+                    current_app.logger.debug(f"  Detected Azure from resource_id pattern")
+                elif 'microsoft.' in resource_id.lower():
+                    cloud_provider = 'AZURE'
+                    current_app.logger.debug(f"  Detected Azure from Microsoft resource")
+                
+                # Check for GCP patterns
+                elif 'gcp' in resource_id.lower() or 'google' in resource_id.lower():
+                    cloud_provider = 'GCP'
+                    current_app.logger.debug(f"  Detected GCP from resource_id")
+                
+                # Check account_id format for additional hints
+                elif account_id and len(account_id) == 12 and account_id.isdigit():
+                    cloud_provider = 'AWS'
+                    current_app.logger.debug(f"  Detected AWS from 12-digit account_id")
+                elif account_id and len(account_id) == 36 and account_id.count('-') == 4:
+                    cloud_provider = 'AZURE'
+                    current_app.logger.debug(f"  Detected Azure from UUID-style subscription")
+            
+            # Normalize to uppercase
+            if cloud_provider and cloud_provider != 'Unknown':
+                cloud_provider = cloud_provider.upper()
+            
+            current_app.logger.info(f"  Final cloud_provider for DB: '{cloud_provider}'")
+            
+            # Extract compliance frameworks
+            compliance_frameworks = finding_data.get('compliance_frameworks', [])
+            if isinstance(compliance_frameworks, list):
+                compliance_json = json.dumps(compliance_frameworks)
+            else:
+                compliance_json = json.dumps([])
+            
+            # Build finding attributes
+            finding_attrs = {
+                'finding_id': finding_id,
+                'title': finding_data.get('title', 'Cloud Security Finding'),
+                'description': finding_data.get('description', ''),
+                'severity': finding_data.get('severity', 'Medium'),
+                'status': finding_data.get('status', 'Open'),
+                'cloud_provider': cloud_provider,
+                'resource_type': resource.get('type', ''),
+                'resource_id': resource.get('id', ''),
+                'resource_name': resource.get('name', 'Unknown'),
+                'region': resource.get('region', ''),
+                'account_id': resource.get('account_id', ''),
+                'policy_violated': finding_data.get('policy_violated', ''),
+                'risk_score': float(finding_data.get('risk_score', 5.0)),
+                'category': finding_data.get('policy_violated', ''),
+                'compliance_frameworks': compliance_json,
+                'remediation': finding_data.get('remediation', ''),
+                'first_detected_at': safe_timestamp_to_datetime(finding_data.get('created_at')),
+                'last_detected_at': safe_timestamp_to_datetime(finding_data.get('updated_at')),
+                'updated_at': datetime.now(timezone.utc),
+                'raw_data': json.dumps(finding_data)  # Store for debugging
+            }
+            
             if existing:
                 # Update existing finding
-                CloudFindingProcessor._update_finding(existing, finding_data)
-                current_app.logger.debug(f"Updated cloud finding: {finding_id}")
+                for key, value in finding_attrs.items():
+                    if key != 'finding_id':
+                        setattr(existing, key, value)
+                current_app.logger.info(f"Updated cloud finding: {finding_id} (Provider: {cloud_provider}, Resource: {resource.get('name')})")
             else:
                 # Create new finding
-                new_finding = CloudFindingProcessor._create_finding(finding_id, finding_data)
+                finding_attrs['created_at'] = datetime.now(timezone.utc)
+                new_finding = CloudFinding(**finding_attrs)
                 db.session.add(new_finding)
-                current_app.logger.debug(f"Created new cloud finding: {finding_id}")
+                current_app.logger.info(f"Created cloud finding: {finding_id} (Provider: {cloud_provider}, Resource: {resource.get('name')})")
             
             db.session.commit()
             return True
@@ -409,142 +478,6 @@ class CloudFindingProcessor:
         except Exception as e:
             db.session.rollback()
             current_app.logger.error(f"Error processing cloud finding: {e}")
-            current_app.logger.debug(f"Finding data: {finding_data}")
+            import traceback
+            current_app.logger.error(traceback.format_exc())
             return False
-    
-    @staticmethod
-    def _create_finding(finding_id, data):
-        """Create a new CloudFinding object"""
-        return CloudFinding(
-            finding_id=finding_id,
-            title=CloudFindingProcessor._extract_field(data, ['title', 'name', 'alertTitle']),
-            description=CloudFindingProcessor._extract_field(data, ['description', 'desc', 'details']),
-            severity=CloudFindingProcessor._normalize_severity(
-                CloudFindingProcessor._extract_field(data, ['severity', 'risk', 'priority'])
-            ),
-            status=CloudFindingProcessor._normalize_status(
-                CloudFindingProcessor._extract_field(data, ['status', 'state'])
-            ),
-            cloud_provider=CloudFindingProcessor._normalize_provider(
-                CloudFindingProcessor._extract_field(data, ['cloud_provider', 'provider', 'cloudProvider'])
-            ),
-            resource_type=CloudFindingProcessor._extract_field(data, ['resource_type', 'resourceType', 'assetType']),
-            resource_id=CloudFindingProcessor._extract_field(data, ['resource_id', 'resourceId', 'assetId']),
-            region=CloudFindingProcessor._extract_field(data, ['region', 'location']),
-            account_id=CloudFindingProcessor._extract_field(data, ['account_id', 'accountId', 'subscriptionId']),
-            risk_score=CloudFindingProcessor._extract_numeric(data, ['risk_score', 'riskScore', 'score']),
-            category=CloudFindingProcessor._extract_field(data, ['category', 'type', 'findingType']),
-            remediation=CloudFindingProcessor._extract_field(data, ['remediation', 'solution', 'recommendation']),
-            first_detected_at=safe_timestamp_to_datetime(
-                CloudFindingProcessor._extract_field(data, ['first_detected', 'firstDetected', 'createdAt', 'created'])
-            ),
-            last_detected_at=safe_timestamp_to_datetime(
-                CloudFindingProcessor._extract_field(data, ['last_detected', 'lastDetected', 'updatedAt', 'updated'])
-            ),
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
-            raw_data=str(data)  # Store full response for debugging
-        )
-    
-    @staticmethod
-    def _update_finding(finding, data):
-        """Update an existing CloudFinding object"""
-        finding.title = CloudFindingProcessor._extract_field(data, ['title', 'name', 'alertTitle']) or finding.title
-        finding.description = CloudFindingProcessor._extract_field(data, ['description', 'desc', 'details']) or finding.description
-        finding.severity = CloudFindingProcessor._normalize_severity(
-            CloudFindingProcessor._extract_field(data, ['severity', 'risk', 'priority'])
-        ) or finding.severity
-        finding.status = CloudFindingProcessor._normalize_status(
-            CloudFindingProcessor._extract_field(data, ['status', 'state'])
-        ) or finding.status
-        finding.cloud_provider = CloudFindingProcessor._normalize_provider(
-            CloudFindingProcessor._extract_field(data, ['cloud_provider', 'provider', 'cloudProvider'])
-        ) or finding.cloud_provider
-        finding.resource_type = CloudFindingProcessor._extract_field(data, ['resource_type', 'resourceType', 'assetType']) or finding.resource_type
-        finding.resource_id = CloudFindingProcessor._extract_field(data, ['resource_id', 'resourceId', 'assetId']) or finding.resource_id
-        finding.region = CloudFindingProcessor._extract_field(data, ['region', 'location']) or finding.region
-        finding.account_id = CloudFindingProcessor._extract_field(data, ['account_id', 'accountId', 'subscriptionId']) or finding.account_id
-        
-        risk_score = CloudFindingProcessor._extract_numeric(data, ['risk_score', 'riskScore', 'score'])
-        if risk_score is not None:
-            finding.risk_score = risk_score
-        
-        finding.category = CloudFindingProcessor._extract_field(data, ['category', 'type', 'findingType']) or finding.category
-        finding.remediation = CloudFindingProcessor._extract_field(data, ['remediation', 'solution', 'recommendation']) or finding.remediation
-        
-        # Update timestamps if available
-        last_detected = safe_timestamp_to_datetime(
-            CloudFindingProcessor._extract_field(data, ['last_detected', 'lastDetected', 'updatedAt', 'updated'])
-        )
-        if last_detected:
-            finding.last_detected_at = last_detected
-        
-        finding.updated_at = datetime.now(timezone.utc)
-        finding.raw_data = str(data)  # Update raw data
-    
-    @staticmethod
-    def _extract_field(data, field_names):
-        """Try multiple field names to extract data"""
-        for field_name in field_names:
-            if field_name in data and data[field_name]:
-                return data[field_name]
-        return None
-    
-    @staticmethod
-    def _extract_numeric(data, field_names):
-        """Extract numeric field, handling various formats"""
-        value = CloudFindingProcessor._extract_field(data, field_names)
-        if value is None:
-            return None
-        try:
-            return float(value)
-        except (ValueError, TypeError):
-            return None
-    
-    @staticmethod
-    def _normalize_severity(severity):
-        """Normalize severity to standard values"""
-        if not severity:
-            return None
-        
-        severity_lower = str(severity).lower()
-        severity_map = {
-            'critical': 'critical', 'crit': 'critical', '4': 'critical',
-            'high': 'high', '3': 'high',
-            'medium': 'medium', 'med': 'medium', '2': 'medium',
-            'low': 'low', '1': 'low',
-            'info': 'info', 'informational': 'info', '0': 'info'
-        }
-        return severity_map.get(severity_lower, severity_lower)
-    
-    @staticmethod
-    def _normalize_status(status):
-        """Normalize status to standard values"""
-        if not status:
-            return 'active'
-        
-        status_lower = str(status).lower()
-        status_map = {
-            'open': 'active', 'active': 'active', 'new': 'active',
-            'closed': 'resolved', 'resolved': 'resolved', 'fixed': 'resolved',
-            'suppressed': 'suppressed', 'ignored': 'suppressed', 'dismissed': 'suppressed',
-            'in_progress': 'in_progress', 'investigating': 'in_progress'
-        }
-        return status_map.get(status_lower, status_lower)
-    
-    @staticmethod
-    def _normalize_provider(provider):
-        """Normalize cloud provider name"""
-        if not provider:
-            return None
-        
-        provider_lower = str(provider).lower()
-        
-        if 'aws' in provider_lower or 'amazon' in provider_lower:
-            return 'aws'
-        elif 'azure' in provider_lower or 'microsoft' in provider_lower:
-            return 'azure'
-        elif 'gcp' in provider_lower or 'google' in provider_lower:
-            return 'gcp'
-        else:
-            return provider_lower
