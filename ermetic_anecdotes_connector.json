@@ -1,242 +1,570 @@
-{
-  "connector": {
-    "name": "Ermetic (Tenable Cloud Security)",
-    "description": "Pulls cloud security findings and IAM/identity findings from the Ermetic / Tenable Cloud Security GraphQL API",
-    "version": "1.1",
-    "type": "graphql"
-  },
+openapi: 3.0.3
 
-  "connection": {
-    "base_url": "{{ERMETIC_API_URL}}",
-    "authentication": {
-      "type": "bearer_token",
-      "header": "Authorization",
-      "value": "Bearer {{ERMETIC_API_TOKEN}}"
-    },
-    "headers": {
-      "Content-Type": "application/json",
-      "User-Agent": "Anecdotes-Connector/1.0"
-    },
-    "timeout_seconds": 30
-  },
+info:
+  title: Ermetic (Tenable Cloud Security) API
+  description: >
+    GraphQL API for Tenable Cloud Security (formerly Ermetic).
+    All requests are POST to a single GraphQL endpoint using Bearer token auth.
+    This spec covers Findings (CSPM) and IAM/Identity findings for use as an
+    Anecdotes custom connector.
+  version: "1.0"
+  contact:
+    name: Tenable Cloud Security
+    url: https://us.app.ermetic.com/docs/api/index
 
-  "queries": [
-    {
-      "name": "get_findings",
-      "description": "Fetches all open security findings with full detail. Uses cursor-based pagination.",
-      "method": "POST",
-      "endpoint": "{{ERMETIC_API_URL}}",
-      "pagination": {
-        "type": "cursor",
-        "page_size": 100,
-        "page_size_variable": "first",
-        "cursor_variable": "after",
-        "next_page_path": "data.Findings.pageInfo.hasNextPage",
-        "cursor_path": "data.Findings.pageInfo.endCursor"
-      },
-      "body": {
-        "query": "query GetFindings($first: Int!, $after: String) { Findings( first: $first, after: $after, filter: { Statuses: [Open] } ) { totalCount nodes { Id CreationTime Status Severity Policy { Name Description Category } Resources { ... on AwsResource { Name Arn Region AccountId __typename } ... on AzureResource { Name Id Region AccountId __typename } ... on GcpResource { Name Id Region AccountId __typename } } Remediation { Console { Steps } } } pageInfo { hasNextPage endCursor } } }",
-        "variables": {
-          "first": 100,
-          "after": null
-        }
-      },
-      "data_path": "data.Findings.nodes",
-      "field_mappings": {
-        "id":                "Id",
-        "title":             "Policy.Name",
-        "description":       "Policy.Description",
-        "category":          "Policy.Category",
-        "severity":          "Severity",
-        "status":            "Status",
-        "created_at":        "CreationTime",
-        "resource_name":     "Resources[0].Name",
-        "resource_id":       "Resources[0].Arn",
-        "resource_region":   "Resources[0].Region",
-        "resource_account":  "Resources[0].AccountId",
-        "cloud_provider":    "Resources[0].__typename",
-        "remediation":       "Remediation.Console.Steps"
-      }
-    },
+servers:
+  - url: https://{tenant}.app.ermetic.com
+    description: Ermetic tenant endpoint
+    variables:
+      tenant:
+        default: your-tenant
+        description: Your Ermetic tenant subdomain
 
-    {
-      "name": "get_findings_critical_high",
-      "description": "Fetches only Critical and High severity open findings.",
-      "method": "POST",
-      "endpoint": "{{ERMETIC_API_URL}}",
-      "pagination": {
-        "type": "cursor",
-        "page_size": 100,
-        "page_size_variable": "first",
-        "cursor_variable": "after",
-        "next_page_path": "data.Findings.pageInfo.hasNextPage",
-        "cursor_path": "data.Findings.pageInfo.endCursor"
-      },
-      "body": {
-        "query": "query GetCriticalFindings($first: Int!, $after: String) { Findings( first: $first, after: $after, filter: { Statuses: [Open], Severities: [Critical, High] } ) { totalCount nodes { Id CreationTime Status Severity Policy { Name Description Category } Resources { ... on AwsResource { Name Arn Region AccountId __typename } ... on AzureResource { Name Id Region AccountId __typename } ... on GcpResource { Name Id Region AccountId __typename } } Remediation { Console { Steps } } } pageInfo { hasNextPage endCursor } } }",
-        "variables": {
-          "first": 100,
-          "after": null
-        }
-      },
-      "data_path": "data.Findings.nodes",
-      "field_mappings": {
-        "id":                "Id",
-        "title":             "Policy.Name",
-        "description":       "Policy.Description",
-        "category":          "Policy.Category",
-        "severity":          "Severity",
-        "status":            "Status",
-        "created_at":        "CreationTime",
-        "resource_name":     "Resources[0].Name",
-        "resource_id":       "Resources[0].Arn",
-        "resource_region":   "Resources[0].Region",
-        "resource_account":  "Resources[0].AccountId",
-        "cloud_provider":    "Resources[0].__typename",
-        "remediation":       "Remediation.Console.Steps"
-      }
-    },
+security:
+  - BearerAuth: []
 
-    {
-      "name": "get_iam_findings",
-      "description": "Fetches open IAM and identity-related findings (excessive permissions, unused roles, privilege escalation risks). Filters by the Identity category.",
-      "method": "POST",
-      "endpoint": "{{ERMETIC_API_URL}}",
-      "pagination": {
-        "type": "cursor",
-        "page_size": 100,
-        "page_size_variable": "first",
-        "cursor_variable": "after",
-        "next_page_path": "data.Findings.pageInfo.hasNextPage",
-        "cursor_path": "data.Findings.pageInfo.endCursor"
-      },
-      "body": {
-        "query": "query GetIAMFindings($first: Int!, $after: String) { Findings( first: $first, after: $after, filter: { Statuses: [Open], Categories: [Identity] } ) { totalCount nodes { Id CreationTime Status Severity Policy { Name Description Category } Resources { ... on AwsResource { Name Arn Region AccountId __typename } ... on AzureResource { Name Id Region AccountId __typename } ... on GcpResource { Name Id Region AccountId __typename } } Remediation { Console { Steps } } } pageInfo { hasNextPage endCursor } } }",
-        "variables": {
-          "first": 100,
-          "after": null
-        }
-      },
-      "data_path": "data.Findings.nodes",
-      "notes": "If 'Categories: [Identity]' returns no results, try Categories: [IAM] or Categories: [Entitlements]. The exact enum value depends on your Ermetic tenant version. Use the discover_schema query to inspect available Category values.",
-      "field_mappings": {
-        "id":                "Id",
-        "title":             "Policy.Name",
-        "description":       "Policy.Description",
-        "category":          "Policy.Category",
-        "severity":          "Severity",
-        "status":            "Status",
-        "created_at":        "CreationTime",
-        "resource_name":     "Resources[0].Name",
-        "resource_id":       "Resources[0].Arn",
-        "resource_region":   "Resources[0].Region",
-        "resource_account":  "Resources[0].AccountId",
-        "cloud_provider":    "Resources[0].__typename",
-        "remediation":       "Remediation.Console.Steps"
-      }
-    },
+paths:
 
-    {
-      "name": "get_iam_critical_high",
-      "description": "Fetches Critical and High severity IAM/identity findings only.",
-      "method": "POST",
-      "endpoint": "{{ERMETIC_API_URL}}",
-      "pagination": {
-        "type": "cursor",
-        "page_size": 100,
-        "page_size_variable": "first",
-        "cursor_variable": "after",
-        "next_page_path": "data.Findings.pageInfo.hasNextPage",
-        "cursor_path": "data.Findings.pageInfo.endCursor"
-      },
-      "body": {
-        "query": "query GetIAMCritical($first: Int!, $after: String) { Findings( first: $first, after: $after, filter: { Statuses: [Open], Severities: [Critical, High], Categories: [Identity] } ) { totalCount nodes { Id CreationTime Status Severity Policy { Name Description Category } Resources { ... on AwsResource { Name Arn Region AccountId __typename } ... on AzureResource { Name Id Region AccountId __typename } ... on GcpResource { Name Id Region AccountId __typename } } Remediation { Console { Steps } } } pageInfo { hasNextPage endCursor } } }",
-        "variables": {
-          "first": 100,
-          "after": null
-        }
-      },
-      "data_path": "data.Findings.nodes",
-      "field_mappings": {
-        "id":                "Id",
-        "title":             "Policy.Name",
-        "description":       "Policy.Description",
-        "category":          "Policy.Category",
-        "severity":          "Severity",
-        "status":            "Status",
-        "created_at":        "CreationTime",
-        "resource_name":     "Resources[0].Name",
-        "resource_id":       "Resources[0].Arn",
-        "resource_region":   "Resources[0].Region",
-        "resource_account":  "Resources[0].AccountId",
-        "cloud_provider":    "Resources[0].__typename",
-        "remediation":       "Remediation.Console.Steps"
-      }
-    },
+  /api/graphql:
+    post:
+      summary: GraphQL endpoint
+      description: >
+        Single endpoint for all Ermetic GraphQL queries.
+        Select the request body example that matches the data you want to pull.
+      operationId: graphqlQuery
+      tags:
+        - GraphQL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            examples:
 
-    {
-      "name": "discover_schema",
-      "description": "Full GraphQL introspection — returns every query type and its fields. Run this once with your token to confirm IAM query names and Category enum values available in your tenant.",
-      "method": "POST",
-      "endpoint": "{{ERMETIC_API_URL}}",
-      "pagination": {
-        "type": "none"
-      },
-      "body": {
-        "query": "query { __schema { queryType { name } types { name kind fields { name type { name kind ofType { name kind } } } } } }"
-      },
-      "data_path": "data.__schema",
-      "field_mappings": {
-        "query_type_name": "queryType.name",
-        "all_types":       "types"
-      }
-    },
+              all_open_findings:
+                summary: All open findings (paginated)
+                value:
+                  query: |
+                    query GetFindings($first: Int!, $after: String) {
+                      Findings(
+                        first: $first
+                        after: $after
+                        filter: { Statuses: [Open] }
+                      ) {
+                        totalCount
+                        nodes {
+                          Id
+                          CreationTime
+                          Status
+                          Severity
+                          Policy {
+                            Name
+                            Description
+                            Category
+                          }
+                          Resources {
+                            ... on AwsResource {
+                              Name
+                              Arn
+                              Region
+                              AccountId
+                              __typename
+                            }
+                            ... on AzureResource {
+                              Name
+                              Id
+                              Region
+                              AccountId
+                              __typename
+                            }
+                            ... on GcpResource {
+                              Name
+                              Id
+                              Region
+                              AccountId
+                              __typename
+                            }
+                          }
+                          Remediation {
+                            Console {
+                              Steps
+                            }
+                          }
+                        }
+                        pageInfo {
+                          hasNextPage
+                          endCursor
+                        }
+                      }
+                    }
+                  variables:
+                    first: 100
+                    after: null
 
-    {
-      "name": "get_finding_count",
-      "description": "Returns total count of findings. Useful for a health check or summary widget.",
-      "method": "POST",
-      "endpoint": "{{ERMETIC_API_URL}}",
-      "pagination": {
-        "type": "none"
-      },
-      "body": {
-        "query": "query { Findings(first: 1) { totalCount } }"
-      },
-      "data_path": "data.Findings",
-      "field_mappings": {
-        "total_count": "totalCount"
-      }
-    },
+              critical_high_findings:
+                summary: Critical and High severity open findings
+                value:
+                  query: |
+                    query GetCriticalFindings($first: Int!, $after: String) {
+                      Findings(
+                        first: $first
+                        after: $after
+                        filter: {
+                          Statuses: [Open]
+                          Severities: [Critical, High]
+                        }
+                      ) {
+                        totalCount
+                        nodes {
+                          Id
+                          CreationTime
+                          Status
+                          Severity
+                          Policy {
+                            Name
+                            Description
+                            Category
+                          }
+                          Resources {
+                            ... on AwsResource {
+                              Name
+                              Arn
+                              Region
+                              AccountId
+                              __typename
+                            }
+                            ... on AzureResource {
+                              Name
+                              Id
+                              Region
+                              AccountId
+                              __typename
+                            }
+                            ... on GcpResource {
+                              Name
+                              Id
+                              Region
+                              AccountId
+                              __typename
+                            }
+                          }
+                          Remediation {
+                            Console {
+                              Steps
+                            }
+                          }
+                        }
+                        pageInfo {
+                          hasNextPage
+                          endCursor
+                        }
+                      }
+                    }
+                  variables:
+                    first: 100
+                    after: null
 
-    {
-      "name": "test_connection",
-      "description": "Schema introspection query used to validate the connection and token.",
-      "method": "POST",
-      "endpoint": "{{ERMETIC_API_URL}}",
-      "pagination": {
-        "type": "none"
-      },
-      "body": {
-        "query": "query { __schema { queryType { name } } }"
-      },
-      "data_path": "data.__schema",
-      "field_mappings": {
-        "query_type": "queryType.name"
-      }
-    }
-  ],
+              iam_identity_findings:
+                summary: IAM / Identity findings (excessive permissions, unused roles, privilege escalation)
+                value:
+                  query: |
+                    query GetIAMFindings($first: Int!, $after: String) {
+                      Findings(
+                        first: $first
+                        after: $after
+                        filter: {
+                          Statuses: [Open]
+                          Categories: [Identity]
+                        }
+                      ) {
+                        totalCount
+                        nodes {
+                          Id
+                          CreationTime
+                          Status
+                          Severity
+                          Policy {
+                            Name
+                            Description
+                            Category
+                          }
+                          Resources {
+                            ... on AwsResource {
+                              Name
+                              Arn
+                              Region
+                              AccountId
+                              __typename
+                            }
+                            ... on AzureResource {
+                              Name
+                              Id
+                              Region
+                              AccountId
+                              __typename
+                            }
+                            ... on GcpResource {
+                              Name
+                              Id
+                              Region
+                              AccountId
+                              __typename
+                            }
+                          }
+                          Remediation {
+                            Console {
+                              Steps
+                            }
+                          }
+                        }
+                        pageInfo {
+                          hasNextPage
+                          endCursor
+                        }
+                      }
+                    }
+                  variables:
+                    first: 100
+                    after: null
 
-  "environment_variables": {
-    "ERMETIC_API_URL": {
-      "description": "Full URL of your Ermetic GraphQL endpoint, e.g. https://your-tenant.app.ermetic.com/api/graphql",
-      "required": true,
-      "sensitive": false
-    },
-    "ERMETIC_API_TOKEN": {
-      "description": "Bearer token generated from the Ermetic console under Settings > API Tokens",
-      "required": true,
-      "sensitive": true
-    }
-  }
-}
+              iam_critical_high:
+                summary: Critical and High IAM / Identity findings only
+                value:
+                  query: |
+                    query GetIAMCritical($first: Int!, $after: String) {
+                      Findings(
+                        first: $first
+                        after: $after
+                        filter: {
+                          Statuses: [Open]
+                          Severities: [Critical, High]
+                          Categories: [Identity]
+                        }
+                      ) {
+                        totalCount
+                        nodes {
+                          Id
+                          CreationTime
+                          Status
+                          Severity
+                          Policy {
+                            Name
+                            Description
+                            Category
+                          }
+                          Resources {
+                            ... on AwsResource {
+                              Name
+                              Arn
+                              Region
+                              AccountId
+                              __typename
+                            }
+                            ... on AzureResource {
+                              Name
+                              Id
+                              Region
+                              AccountId
+                              __typename
+                            }
+                            ... on GcpResource {
+                              Name
+                              Id
+                              Region
+                              AccountId
+                              __typename
+                            }
+                          }
+                          Remediation {
+                            Console {
+                              Steps
+                            }
+                          }
+                        }
+                        pageInfo {
+                          hasNextPage
+                          endCursor
+                        }
+                      }
+                    }
+                  variables:
+                    first: 100
+                    after: null
+
+              finding_count:
+                summary: Total finding count (health check / summary)
+                value:
+                  query: |
+                    query {
+                      Findings(first: 1) {
+                        totalCount
+                      }
+                    }
+
+              test_connection:
+                summary: Schema introspection — validates token and lists all query types
+                value:
+                  query: |
+                    query {
+                      __schema {
+                        queryType { name }
+                        types {
+                          name
+                          kind
+                          fields {
+                            name
+                            type {
+                              name
+                              kind
+                              ofType { name kind }
+                            }
+                          }
+                        }
+                      }
+                    }
+
+      responses:
+        '200':
+          description: Successful GraphQL response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphQLResponse'
+              examples:
+                findings_response:
+                  summary: Example findings response
+                  value:
+                    data:
+                      Findings:
+                        totalCount: 243
+                        nodes:
+                          - Id: "abc-123"
+                            CreationTime: "2024-11-01T10:00:00Z"
+                            Status: "Open"
+                            Severity: "High"
+                            Policy:
+                              Name: "S3 bucket publicly accessible"
+                              Description: "An S3 bucket is configured to allow public access"
+                              Category: "Storage"
+                            Resources:
+                              - Name: "my-public-bucket"
+                                Arn: "arn:aws:s3:::my-public-bucket"
+                                Region: "us-east-1"
+                                AccountId: "123456789012"
+                                __typename: "AwsResource"
+                            Remediation:
+                              Console:
+                                Steps:
+                                  - "Open the S3 console"
+                                  - "Select the bucket"
+                                  - "Disable public access"
+                        pageInfo:
+                          hasNextPage: true
+                          endCursor: "cursor-token-xyz"
+        '401':
+          description: Unauthorized — invalid or missing Bearer token
+        '400':
+          description: Bad request — malformed GraphQL query
+
+components:
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Bearer token generated in the Ermetic console under
+        Settings > API Tokens. Pass as: Authorization: Bearer <token>
+
+  schemas:
+
+    GraphQLRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: The GraphQL query string
+        variables:
+          type: object
+          description: Variables referenced in the query
+          properties:
+            first:
+              type: integer
+              default: 100
+              description: Page size for paginated queries
+            after:
+              type: string
+              nullable: true
+              description: Cursor for the next page (null for first page)
+          additionalProperties: true
+        operationName:
+          type: string
+          description: Optional name of the operation to execute
+
+    GraphQLResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          description: Query result payload
+          properties:
+            Findings:
+              $ref: '#/components/schemas/FindingsConnection'
+        errors:
+          type: array
+          description: Present only when the query contains errors
+          items:
+            $ref: '#/components/schemas/GraphQLError'
+
+    FindingsConnection:
+      type: object
+      properties:
+        totalCount:
+          type: integer
+          description: Total number of findings matching the filter
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Finding'
+        pageInfo:
+          $ref: '#/components/schemas/PageInfo'
+
+    Finding:
+      type: object
+      properties:
+        Id:
+          type: string
+          description: Unique finding identifier
+        CreationTime:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp when the finding was created
+        Status:
+          type: string
+          enum: [Open, Closed, InProgress, Muted]
+        Severity:
+          type: string
+          enum: [Critical, High, Medium, Low]
+        Policy:
+          $ref: '#/components/schemas/Policy'
+        Resources:
+          type: array
+          description: Cloud resources affected by this finding
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/AwsResource'
+              - $ref: '#/components/schemas/AzureResource'
+              - $ref: '#/components/schemas/GcpResource'
+        Remediation:
+          $ref: '#/components/schemas/Remediation'
+
+    Policy:
+      type: object
+      properties:
+        Name:
+          type: string
+          description: Policy / rule name
+        Description:
+          type: string
+          description: Full description of what the policy checks
+        Category:
+          type: string
+          description: >
+            Finding category. Known values include: Identity, Storage,
+            Network, Compute, Logging, Encryption, IAM.
+            Use the test_connection introspection query to confirm
+            exact enum values for your tenant.
+
+    AwsResource:
+      type: object
+      properties:
+        __typename:
+          type: string
+          enum: [AwsResource]
+        Name:
+          type: string
+        Arn:
+          type: string
+          description: AWS ARN of the resource
+        Region:
+          type: string
+        AccountId:
+          type: string
+
+    AzureResource:
+      type: object
+      properties:
+        __typename:
+          type: string
+          enum: [AzureResource]
+        Name:
+          type: string
+        Id:
+          type: string
+          description: Azure resource ID
+        Region:
+          type: string
+        AccountId:
+          type: string
+          description: Azure subscription ID
+
+    GcpResource:
+      type: object
+      properties:
+        __typename:
+          type: string
+          enum: [GcpResource]
+        Name:
+          type: string
+        Id:
+          type: string
+          description: GCP resource ID
+        Region:
+          type: string
+        AccountId:
+          type: string
+          description: GCP project ID
+
+    Remediation:
+      type: object
+      properties:
+        Console:
+          type: object
+          properties:
+            Steps:
+              type: array
+              items:
+                type: string
+              description: Step-by-step remediation instructions
+
+    PageInfo:
+      type: object
+      properties:
+        hasNextPage:
+          type: boolean
+          description: True if more pages are available
+        endCursor:
+          type: string
+          description: Pass this value as the "after" variable to fetch the next page
+
+    GraphQLError:
+      type: object
+      properties:
+        message:
+          type: string
+        locations:
+          type: array
+          items:
+            type: object
+            properties:
+              line:
+                type: integer
+              column:
+                type: integer
+        path:
+          type: array
+          items:
+            type: string
