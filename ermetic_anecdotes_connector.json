@@ -1,0 +1,242 @@
+{
+  "connector": {
+    "name": "Ermetic (Tenable Cloud Security)",
+    "description": "Pulls cloud security findings and IAM/identity findings from the Ermetic / Tenable Cloud Security GraphQL API",
+    "version": "1.1",
+    "type": "graphql"
+  },
+
+  "connection": {
+    "base_url": "{{ERMETIC_API_URL}}",
+    "authentication": {
+      "type": "bearer_token",
+      "header": "Authorization",
+      "value": "Bearer {{ERMETIC_API_TOKEN}}"
+    },
+    "headers": {
+      "Content-Type": "application/json",
+      "User-Agent": "Anecdotes-Connector/1.0"
+    },
+    "timeout_seconds": 30
+  },
+
+  "queries": [
+    {
+      "name": "get_findings",
+      "description": "Fetches all open security findings with full detail. Uses cursor-based pagination.",
+      "method": "POST",
+      "endpoint": "{{ERMETIC_API_URL}}",
+      "pagination": {
+        "type": "cursor",
+        "page_size": 100,
+        "page_size_variable": "first",
+        "cursor_variable": "after",
+        "next_page_path": "data.Findings.pageInfo.hasNextPage",
+        "cursor_path": "data.Findings.pageInfo.endCursor"
+      },
+      "body": {
+        "query": "query GetFindings($first: Int!, $after: String) { Findings( first: $first, after: $after, filter: { Statuses: [Open] } ) { totalCount nodes { Id CreationTime Status Severity Policy { Name Description Category } Resources { ... on AwsResource { Name Arn Region AccountId __typename } ... on AzureResource { Name Id Region AccountId __typename } ... on GcpResource { Name Id Region AccountId __typename } } Remediation { Console { Steps } } } pageInfo { hasNextPage endCursor } } }",
+        "variables": {
+          "first": 100,
+          "after": null
+        }
+      },
+      "data_path": "data.Findings.nodes",
+      "field_mappings": {
+        "id":                "Id",
+        "title":             "Policy.Name",
+        "description":       "Policy.Description",
+        "category":          "Policy.Category",
+        "severity":          "Severity",
+        "status":            "Status",
+        "created_at":        "CreationTime",
+        "resource_name":     "Resources[0].Name",
+        "resource_id":       "Resources[0].Arn",
+        "resource_region":   "Resources[0].Region",
+        "resource_account":  "Resources[0].AccountId",
+        "cloud_provider":    "Resources[0].__typename",
+        "remediation":       "Remediation.Console.Steps"
+      }
+    },
+
+    {
+      "name": "get_findings_critical_high",
+      "description": "Fetches only Critical and High severity open findings.",
+      "method": "POST",
+      "endpoint": "{{ERMETIC_API_URL}}",
+      "pagination": {
+        "type": "cursor",
+        "page_size": 100,
+        "page_size_variable": "first",
+        "cursor_variable": "after",
+        "next_page_path": "data.Findings.pageInfo.hasNextPage",
+        "cursor_path": "data.Findings.pageInfo.endCursor"
+      },
+      "body": {
+        "query": "query GetCriticalFindings($first: Int!, $after: String) { Findings( first: $first, after: $after, filter: { Statuses: [Open], Severities: [Critical, High] } ) { totalCount nodes { Id CreationTime Status Severity Policy { Name Description Category } Resources { ... on AwsResource { Name Arn Region AccountId __typename } ... on AzureResource { Name Id Region AccountId __typename } ... on GcpResource { Name Id Region AccountId __typename } } Remediation { Console { Steps } } } pageInfo { hasNextPage endCursor } } }",
+        "variables": {
+          "first": 100,
+          "after": null
+        }
+      },
+      "data_path": "data.Findings.nodes",
+      "field_mappings": {
+        "id":                "Id",
+        "title":             "Policy.Name",
+        "description":       "Policy.Description",
+        "category":          "Policy.Category",
+        "severity":          "Severity",
+        "status":            "Status",
+        "created_at":        "CreationTime",
+        "resource_name":     "Resources[0].Name",
+        "resource_id":       "Resources[0].Arn",
+        "resource_region":   "Resources[0].Region",
+        "resource_account":  "Resources[0].AccountId",
+        "cloud_provider":    "Resources[0].__typename",
+        "remediation":       "Remediation.Console.Steps"
+      }
+    },
+
+    {
+      "name": "get_iam_findings",
+      "description": "Fetches open IAM and identity-related findings (excessive permissions, unused roles, privilege escalation risks). Filters by the Identity category.",
+      "method": "POST",
+      "endpoint": "{{ERMETIC_API_URL}}",
+      "pagination": {
+        "type": "cursor",
+        "page_size": 100,
+        "page_size_variable": "first",
+        "cursor_variable": "after",
+        "next_page_path": "data.Findings.pageInfo.hasNextPage",
+        "cursor_path": "data.Findings.pageInfo.endCursor"
+      },
+      "body": {
+        "query": "query GetIAMFindings($first: Int!, $after: String) { Findings( first: $first, after: $after, filter: { Statuses: [Open], Categories: [Identity] } ) { totalCount nodes { Id CreationTime Status Severity Policy { Name Description Category } Resources { ... on AwsResource { Name Arn Region AccountId __typename } ... on AzureResource { Name Id Region AccountId __typename } ... on GcpResource { Name Id Region AccountId __typename } } Remediation { Console { Steps } } } pageInfo { hasNextPage endCursor } } }",
+        "variables": {
+          "first": 100,
+          "after": null
+        }
+      },
+      "data_path": "data.Findings.nodes",
+      "notes": "If 'Categories: [Identity]' returns no results, try Categories: [IAM] or Categories: [Entitlements]. The exact enum value depends on your Ermetic tenant version. Use the discover_schema query to inspect available Category values.",
+      "field_mappings": {
+        "id":                "Id",
+        "title":             "Policy.Name",
+        "description":       "Policy.Description",
+        "category":          "Policy.Category",
+        "severity":          "Severity",
+        "status":            "Status",
+        "created_at":        "CreationTime",
+        "resource_name":     "Resources[0].Name",
+        "resource_id":       "Resources[0].Arn",
+        "resource_region":   "Resources[0].Region",
+        "resource_account":  "Resources[0].AccountId",
+        "cloud_provider":    "Resources[0].__typename",
+        "remediation":       "Remediation.Console.Steps"
+      }
+    },
+
+    {
+      "name": "get_iam_critical_high",
+      "description": "Fetches Critical and High severity IAM/identity findings only.",
+      "method": "POST",
+      "endpoint": "{{ERMETIC_API_URL}}",
+      "pagination": {
+        "type": "cursor",
+        "page_size": 100,
+        "page_size_variable": "first",
+        "cursor_variable": "after",
+        "next_page_path": "data.Findings.pageInfo.hasNextPage",
+        "cursor_path": "data.Findings.pageInfo.endCursor"
+      },
+      "body": {
+        "query": "query GetIAMCritical($first: Int!, $after: String) { Findings( first: $first, after: $after, filter: { Statuses: [Open], Severities: [Critical, High], Categories: [Identity] } ) { totalCount nodes { Id CreationTime Status Severity Policy { Name Description Category } Resources { ... on AwsResource { Name Arn Region AccountId __typename } ... on AzureResource { Name Id Region AccountId __typename } ... on GcpResource { Name Id Region AccountId __typename } } Remediation { Console { Steps } } } pageInfo { hasNextPage endCursor } } }",
+        "variables": {
+          "first": 100,
+          "after": null
+        }
+      },
+      "data_path": "data.Findings.nodes",
+      "field_mappings": {
+        "id":                "Id",
+        "title":             "Policy.Name",
+        "description":       "Policy.Description",
+        "category":          "Policy.Category",
+        "severity":          "Severity",
+        "status":            "Status",
+        "created_at":        "CreationTime",
+        "resource_name":     "Resources[0].Name",
+        "resource_id":       "Resources[0].Arn",
+        "resource_region":   "Resources[0].Region",
+        "resource_account":  "Resources[0].AccountId",
+        "cloud_provider":    "Resources[0].__typename",
+        "remediation":       "Remediation.Console.Steps"
+      }
+    },
+
+    {
+      "name": "discover_schema",
+      "description": "Full GraphQL introspection — returns every query type and its fields. Run this once with your token to confirm IAM query names and Category enum values available in your tenant.",
+      "method": "POST",
+      "endpoint": "{{ERMETIC_API_URL}}",
+      "pagination": {
+        "type": "none"
+      },
+      "body": {
+        "query": "query { __schema { queryType { name } types { name kind fields { name type { name kind ofType { name kind } } } } } }"
+      },
+      "data_path": "data.__schema",
+      "field_mappings": {
+        "query_type_name": "queryType.name",
+        "all_types":       "types"
+      }
+    },
+
+    {
+      "name": "get_finding_count",
+      "description": "Returns total count of findings. Useful for a health check or summary widget.",
+      "method": "POST",
+      "endpoint": "{{ERMETIC_API_URL}}",
+      "pagination": {
+        "type": "none"
+      },
+      "body": {
+        "query": "query { Findings(first: 1) { totalCount } }"
+      },
+      "data_path": "data.Findings",
+      "field_mappings": {
+        "total_count": "totalCount"
+      }
+    },
+
+    {
+      "name": "test_connection",
+      "description": "Schema introspection query used to validate the connection and token.",
+      "method": "POST",
+      "endpoint": "{{ERMETIC_API_URL}}",
+      "pagination": {
+        "type": "none"
+      },
+      "body": {
+        "query": "query { __schema { queryType { name } } }"
+      },
+      "data_path": "data.__schema",
+      "field_mappings": {
+        "query_type": "queryType.name"
+      }
+    }
+  ],
+
+  "environment_variables": {
+    "ERMETIC_API_URL": {
+      "description": "Full URL of your Ermetic GraphQL endpoint, e.g. https://your-tenant.app.ermetic.com/api/graphql",
+      "required": true,
+      "sensitive": false
+    },
+    "ERMETIC_API_TOKEN": {
+      "description": "Bearer token generated from the Ermetic console under Settings > API Tokens",
+      "required": true,
+      "sensitive": true
+    }
+  }
+}
